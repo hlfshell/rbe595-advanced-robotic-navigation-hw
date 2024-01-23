@@ -138,6 +138,84 @@ We iterate on this for the next timestep, leading us to\dots
 
 Thus, while we have a set probability of success for our sensor, we must also consider the success probability of our actuator and prior actions.
 
+Let's do the same analysis again for $U = \textbf{push}$:
+
+\begin{equation}
+    \begin{split}
+        \overline{bel}(X_1=\textbf{is\_open}) = \\
+        p(X_1 = \textbf{is\_open} \mid U_1 = \textbf{push}, X_0 = \textbf{is\_open}) bel(X_0 = \textbf{is\_open}) + \\
+        p(X_1 = \textbf{is\_open} \mid U_1 = \textbf{push}, X_0 = \textbf{is\_closed}) bel(X_0 = \textbf{is\_closed}) = \\
+        1.0 * 0.5 + 0.8 * 0.5 = 0.9 \\
+    \end{split}
+\end{equation}
+
+\begin{equation}
+    \begin{split}
+        \overline{bel}(X_1=\textbf{is\_closed}) = \\
+        p(X_1 = \textbf{is\_closed} \mid U_1 = \textbf{push}, X_0 = \textbf{is\_open}) bel(X_0 = \textbf{is\_open}) + \\
+        p(X_1 = \textbf{is\_closed} \mid U_1 = \textbf{push}, X_0 = \textbf{is\_closed}) bel(X_0 = \textbf{is\_closed}) = \\
+        0.0 * 0.5 + 0.2 * 0.5 = 0.1 \\
+    \end{split}
+\end{equation}
+
+Again, we begin incorporating our measurement.
+
+\begin{equation}
+    bel(x_1) = \eta p(z_1 \mid x_1) \overline{bel}(x_1)
+\end{equation}
+
+...so:
+
+\begin{equation}
+    \begin{split}
+        bel(X_1 = \textbf{is\_open}) = \\
+        \eta p(Z_1 = \textbf{door\_open} \mid X_1 = \textbf{is\_open}) \overline{bel}(X_1 = \textbf{is\_open}) = \\
+        \eta 0.6 * 0.9 = \eta 0.54
+    \end{split}
+\end{equation}
+
+\begin{equation}
+    \begin{split}
+        bel(X_1 = \textbf{is\_closed}) = \\
+        \eta p(Z_1 = \textbf{door\_open} \mid X_1 = \textbf{is\_closed}) \overline{bel}(X_1 = \textbf{is\_closed}) = \\
+        \eta 0.2 * 0.1 = \eta 0.02
+    \end{split}
+\end{equation}
+
+Calculating or $\eta$ again:
+
+\begin{equation}
+    \eta = \frac{1}{0.54 + 0.02} = \frac{1}{0.56} = 1.7857
+\end{equation}
+
+So that means:
+
+\begin{equation}
+    \begin{split}
+        bel(X_1 = \textbf{is\_open}) = 1.7857 * 0.54 = 0.9643 \\
+        bel(X_1 = \textbf{is\_closed}) = 1.7857 * 0.02 = 0.0357
+    \end{split}
+\end{equation}
+
+We iterate on this for the next timestep once again, leading us to\dots
+
+\begin{equation}
+    \begin{split}
+        \overline{bel}(X_2=\textbf{is\_open}) = 1 * 0.9643 + 0.8 * 0.0357 = 0.9829 \\
+        \overline{bel}(X_2=\textbf{is\_closed}) = 0 * 0.9643 + 0.2 * 0.0357 = 0.0171 \\
+    \end{split}
+\end{equation}
+
+\begin{equation}
+    \begin{split}
+        bel(X_2 = \textbf{is\_open}) = \eta 0.6 * 0.9829 = 0.9829 \\
+        bel(X_2 = \textbf{is\_closed}) = \eta 0.2 * 0.0171 = 0.0171
+    \end{split}
+\end{equation}
+
+What can we derive from these calculations? It seems our robot is reliable at detecting a closed door. If the robot thinks the door is closed, and attempts to open it, then there we have an 80\% chance that the door is open.
+
+
 \section*{Task 2}
 
 In this problem we were tasked to implement a Bayes filter from scratch in a language of our choice. For simplicity, Python was chosen. The attached files, \textbf{task2.py}, contains the salient code for this task. A generic Bayes Filter class is created and reused for the given tasks.
