@@ -46,9 +46,9 @@ class KalmanFilter:
         F[2, 5] = delta_t
 
         G = np.zeros((6, 3))
-        G[0, 0] = 0.5 * delta_t**2
-        G[1, 1] = 0.5 * delta_t**2
-        G[2, 2] = 0.5 * delta_t**2
+        G[0, 0] = delta_t**2 / (self.mass * 2)
+        G[1, 1] = delta_t**2 / (self.mass * 2)
+        G[2, 2] = delta_t**2 / (self.mass * 2)
         G[3, 0] = delta_t / self.mass
         G[4, 1] = delta_t / self.mass
         G[5, 2] = delta_t / self.mass
@@ -84,6 +84,7 @@ class KalmanFilter:
             x_n[0] = measurement[0]
             x_n[1] = measurement[1]
             x_n[2] = measurement[2]
+
         z_n = self.H.dot(x_n)
 
         R = np.identity(3) * (self.update_sigma**2)
@@ -199,7 +200,7 @@ def run_filter(data: List[DataPoint], filter: KalmanFilter) -> List[DataPoint]:
 
 if __name__ == "__main__":
     # Our drone is 27 grams
-    mass = 27
+    mass = 0.00027
 
     # Mocap data
     # I'm suggesting a measurement sigma of 1/10th a cm, or 1e-3 m
