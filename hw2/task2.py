@@ -46,12 +46,19 @@ class KalmanFilter:
         F[2, 5] = delta_t
 
         G = np.zeros((6, 3))
-        G[0, 0] = delta_t**2 / (self.mass * 2)
-        G[1, 1] = delta_t**2 / (self.mass * 2)
-        G[2, 2] = delta_t**2 / (self.mass * 2)
-        G[3, 0] = delta_t / self.mass
-        G[4, 1] = delta_t / self.mass
-        G[5, 2] = delta_t / self.mass
+        # TODO - why is this working multiplied and not divided???
+        # G[0, 0] = delta_t**2 / (self.mass * 2)
+        # G[1, 1] = delta_t**2 / (self.mass * 2)
+        # G[2, 2] = delta_t**2 / (self.mass * 2)
+        # G[3, 0] = delta_t / self.mass
+        # G[4, 1] = delta_t / self.mass
+        # G[5, 2] = delta_t / self.mass
+        G[0, 0] = delta_t**2 * self.mass * 0.5
+        G[1, 1] = delta_t**2 * self.mass * 0.5
+        G[2, 2] = delta_t**2 * self.mass * 0.5
+        G[3, 0] = delta_t * self.mass
+        G[4, 1] = delta_t * self.mass
+        G[5, 2] = delta_t * self.mass
 
         Q = np.identity(6) * (self.predict_sigma**2)
 
@@ -104,8 +111,8 @@ class KalmanFilter:
         )
 
         self.P = (np.identity(6) - K.dot(self.H)).dot(self.P).dot(
-            np.identity(6) - K.dot(self.H)
-        ).T + K.dot(R).dot(K.T)
+            (np.identity(6) - K.dot(self.H)).T
+        ) + K.dot(R).dot(K.T)
 
         return self.state
 
@@ -205,8 +212,8 @@ if __name__ == "__main__":
     # Mocap data
     # I'm suggesting a measurement sigma of 1/10th a cm, or 1e-3 m
     # and an update process variance sigma of 0.5 meters
-    predict_sigma = 0.5
-    update_sigma = 0.001
+    predict_sigma = 0.001
+    update_sigma = 0.1
     data = load_data_from_csv("data/mocap.csv")
     filter = KalmanFilter(None, False, mass, predict_sigma, update_sigma)
     results: List[State] = []
@@ -220,8 +227,8 @@ if __name__ == "__main__":
     # Velocity data
     # I'm suggesting a measurement sigma of 1/10th a cm, or 1e-3 m
     # and an update process variance sigma of 0.5 meters
-    predict_sigma = 0.5
-    update_sigma = 0.001
+    predict_sigma = 0.001
+    update_sigma = 0.1
     data = load_data_from_csv("data/velocity.csv")
     filter = KalmanFilter(None, True, mass, predict_sigma, update_sigma)
     results: List[State] = []
@@ -233,10 +240,8 @@ if __name__ == "__main__":
     plot.savefig("imgs/task2_velocity.png")
 
     # Low noise
-    # Increase our prediction noise from earlier as we have
-    # noise to work with
-    predict_sigma = 1
-    update_sigma = 0.05
+    predict_sigma = 0.001
+    update_sigma = 0.1
     data = load_data_from_csv("data/low_noise.csv")
     filter = KalmanFilter(None, False, mass, predict_sigma, update_sigma)
     results: List[State] = []
@@ -249,8 +254,8 @@ if __name__ == "__main__":
 
     # High noise
     # Increase our sigmas for variance even more
-    predict_sigma = 1
-    update_sigma = 0.1
+    predict_sigma = 0.005
+    update_sigma = 0.5
     data = load_data_from_csv("data/high_noise.csv")
     filter = KalmanFilter(None, False, mass, predict_sigma, update_sigma)
     results: List[State] = []
