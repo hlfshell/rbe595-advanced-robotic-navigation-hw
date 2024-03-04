@@ -1,12 +1,17 @@
 from __future__ import annotations
-from cv2 import solvePnP
+from cv2 import solvePnP, Rodrigues
 import numpy as np
 
 import matplotlib.pyplot as plt
 
+# from matplotlib.figure import Figure
+# from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
+
 from typing import Dict, List, NamedTuple, Optional, Tuple, Union
 
 from scipy.io import loadmat
+
+import cv2
 
 
 class ImageCoordinate(NamedTuple):
@@ -164,14 +169,13 @@ class Map:
         # AprilTag
         extra_offset = 0.178 - 0.152
         for row_index, row in enumerate(tag_map):
-            y_offset = 0.152 * row_index * 2
-            if row_index + 1 >= 3:
-                y_offset += extra_offset
-            if row_index + 1 >= 6:
-                y_offset += extra_offset
-
+            x_offset = 0.152 * row_index * 2
             for tag_index, tag in enumerate(row):
-                x_offset = 0.152 * tag_index * 2
+                y_offset = 0.152 * tag_index * 2
+                if row_index + 1 >= 3:
+                    y_offset += extra_offset
+                if row_index + 1 >= 6:
+                    y_offset += extra_offset
 
                 top_left = Coordinate(x_offset, y_offset, 0)
                 top_right = Coordinate(x_offset, y_offset + 0.152, 0)
@@ -187,24 +191,13 @@ class Map:
                 )
         self.tags = tags
 
-    def estimate_pose(self, tags: List[AprilTag]):
+    def estimate_pose(self, tags: List[AprilTag]) -> Tuple[np.ndarray, np.ndarray]:
         """
         estimate_pose will, given a list of observed AprilTags,
         pair them with their real world coordinates in order to
         estimate the orientation and position of the camera at
         that moment in time.
         """
-        world_points = []
-        # for tag in tags:
-        #     world_points.append(
-        #         [
-        #             tuple(self.tags[tag.id].bottom_left),
-        #             tuple(self.tags[tag.id].bottom_right),
-        #             tuple(self.tags[tag.id].top_right),
-        #             tuple(self.tags[tag.id].top_left),
-        #         ]
-        #     )
-        # world_points = np.array(world_points)
         world_points = []
         image_points = []
         for tag in tags:
@@ -220,18 +213,6 @@ class Map:
         world_points = np.array(world_points)
         image_points = np.array(image_points)
 
-        # image_points = np.array(
-        #     [
-        #         [
-        #             tuple(tag.bottom_left),
-        #             tuple(tag.bottom_right),
-        #             tuple(tag.top_right),
-        #             tuple(tag.top_left),
-        #         ]
-        #         for tag in tags
-        #     ]
-        # )
-
         _, orientation, position = solvePnP(
             world_points,
             image_points,
@@ -239,6 +220,41 @@ class Map:
             self.distortion_coefficients,
             flags=0,
         )
+
+        # Build our kinematic transform frame from the camera offset provided
+        # XYZ = [-0.04, 0.0, -0.03];
+        # Yaw = pi/4;
+        frame_transform = np.array(
+            [
+                [np.cos(np.pi / 4), -np.sin(np.pi / 4), 0, -0.04],
+                [np.sin(np.pi / 4), np.cos(np.pi / 4), 0, 0],
+                [0, 0, 1, -0.03],
+                [0, 0, 0, 1],
+            ]
+        )
+
+        # Convert the orientation to rotation matrix via
+        # Rodrigues' formulae
+        orientation = Rodrigues(orientation)[0]
+
+        current_camera_position = np.array(
+            [
+                np.concatenate((orientation[0:3, 0], -position[0])),
+                np.concatenate((orientation[0:3, 1], position[1])),
+                np.concatenate((orientation[0:3, 2], position[2])),
+                [0, 0, 0, 1],
+            ]
+        )
+
+        # Now we can translate the position back to the center of
+        # the drone
+        # drone_state = np.dot(current_camera_position, np.linalg.inv(frame_transform))
+        drone_state = np.dot(np.linalg.inv(frame_transform), current_camera_position)
+        # drone_state = np.dot(frame_transform, current_camera_position)
+
+        position = drone_state[0:3, 3]
+        # Convert the rotation matrix back to a vector
+        orientation = Rodrigues(drone_state[0:3, 0:3])[0]
 
         return orientation, position
 
@@ -332,7 +348,11 @@ def read_mat(filepath: str) -> Tuple[List[Data], List[GroundTruth]]:
     return data, ground_truth
 
 
-def plot_trajectory(trajectory: List[Coordinate], title: str = "") -> None:
+def plot_trajectory(
+    trajectory: List[Coordinate],
+    title: str = "",
+    view: Optional[str] = None,
+):
     """
     Given a list of coordinates as a trajectory plot the
     trajectory in 3D space.
@@ -344,6 +364,12 @@ def plot_trajectory(trajectory: List[Coordinate], title: str = "") -> None:
 
     figure = plt.figure(figsize=(10, 6), layout="tight")
     axes = plt.axes(projection="3d")
+    if view == "top" or view == "z":
+        axes.view_init(elev=90.0, azim=0)
+    elif view == "x":
+        axes.view_init(elev=0.0, azim=90.0)
+    elif view == "y":
+        axes.view_init(elev=0.0, azim=180.0)
     axes.set_xlabel("x")
     axes.set_ylabel("y")
     axes.set_zlabel("z")
@@ -355,27 +381,145 @@ def plot_trajectory(trajectory: List[Coordinate], title: str = "") -> None:
     return figure
 
 
+def create_trajectory_plots(
+    ground_truth: List[GroundTruth],
+    estimated_positions: List[np.ndarray],
+):
+    gt_coordinates = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
+    estimated_coordinates = [
+        Coordinate(x=position[0], y=position[1], z=position[2])
+        for position in estimated_positions
+    ]
+
+    x_gt = [coord.x for coord in gt_coordinates]
+    y_gt = [coord.y for coord in gt_coordinates]
+    z_gt = [coord.z for coord in gt_coordinates]
+
+    x_estimated = [coord.x for coord in estimated_coordinates]
+    y_estimated = [coord.y for coord in estimated_coordinates]
+    z_estimated = [coord.z for coord in estimated_coordinates]
+
+    fig, axs = plt.subplots(2, 3, figsize=(20, 10))
+    fig.suptitle("Trajectory comparisons of Ground Truth and Estimated Positions")
+
+    # Plot the trajectory of the ground truth and the estimated
+    # positions from the top-down view
+
+    axs[0, 0].set_xlabel("x")
+    axs[0, 0].set_ylabel("y")
+    axs[0, 0].dist = 11
+    axs[0, 0].set_title("Top-Down Ground Truth Trajectory")
+    axs[0, 0].scatter(x_gt, y_gt, z_gt, c=z_gt, linewidths=0.5)
+
+    axs[1, 0].set_xlabel("x")
+    axs[1, 0].set_ylabel("y")
+    axs[1, 0].dist = 11
+    axs[1, 0].set_title("Top-Down Estimated Trajectory")
+    axs[1, 0].scatter(
+        x_estimated, y_estimated, z_estimated, c=z_estimated, linewidths=0.5
+    )
+
+    axs[0, 1].set_xlabel("y")
+    axs[0, 1].set_ylabel("z")
+    axs[0, 1].dist = 11
+    axs[0, 1].set_title("X Ground Truth Trajectory")
+    axs[0, 1].scatter(y_gt, z_gt, c=z_gt, linewidths=0.5)
+
+    axs[1, 1].set_xlabel("y")
+    axs[1, 1].set_ylabel("z")
+    axs[1, 1].dist = 11
+    axs[1, 1].set_title("X Estimated Trajectory")
+    axs[1, 1].scatter(y_estimated, z_estimated, c=z_estimated, linewidths=0.5)
+
+    axs[0, 2].set_xlabel("x")
+    axs[0, 2].set_ylabel("z")
+    axs[0, 2].dist = 11
+    axs[0, 2].set_title("Y Ground Truth Trajectory")
+    axs[0, 2].scatter(x_gt, z_gt, c=z_gt, linewidths=0.5)
+
+    axs[1, 2].set_xlabel("x")
+    axs[1, 2].set_ylabel("z")
+    axs[1, 2].dist = 11
+    axs[1, 2].set_title("Y Estimated Trajectory")
+    axs[1, 2].scatter(x_estimated, z_estimated, c=z_estimated, linewidths=0.5)
+
+    fig.savefig("./hw3/imgs/combined.png")
+
+
+def create_orientation_plots(
+    ground_truth: List[GroundTruth],
+    estimated_orientations: List[np.ndarray],
+):
+    yaw_gt = [gti.yaw for gti in ground_truth]
+    pitch_gt = [gti.pitch for gti in ground_truth]
+    roll_gt = [gti.roll for gti in ground_truth]
+
+    yaw_estimated = [orientation[2] for orientation in estimated_orientations]
+    pitch_estimated = [orientation[1] for orientation in estimated_orientations]
+    roll_estimated = [orientation[0] for orientation in estimated_orientations]
+
+    fig, axs = plt.subplots(2, 3, figsize=(20, 10))
+    fig.suptitle("Orientation comparisons of Ground Truth and Estimated Positions")
+
+    axs[0, 0].set_xlabel("Time")
+    axs[0, 0].set_ylabel("Yaw")
+    axs[0, 0].set_title("Yaw Ground Truth")
+    axs[0, 0].plot(yaw_gt)
+
+    axs[1, 0].set_xlabel("Time")
+    axs[1, 0].set_ylabel("Yaw")
+    axs[1, 0].set_title("Yaw Estimated")
+    axs[1, 0].plot(yaw_estimated)
+
+    axs[0, 1].set_xlabel("Time")
+    axs[0, 1].set_ylabel("Pitch")
+    axs[0, 1].set_title("Pitch Ground Truth")
+    axs[0, 1].plot(pitch_gt)
+
+    axs[1, 1].set_xlabel("Time")
+    axs[1, 1].set_ylabel("Pitch")
+    axs[1, 1].set_title("Pitch Estimated")
+    axs[1, 1].plot(pitch_estimated)
+
+    axs[0, 2].set_xlabel("Time")
+    axs[0, 2].set_ylabel("Roll")
+    axs[0, 2].set_title("Roll Ground Truth")
+    axs[0, 2].plot(roll_gt)
+
+    axs[1, 2].set_xlabel("Time")
+    axs[1, 2].set_ylabel("Roll")
+    axs[1, 2].set_title("Roll Estimated")
+    axs[1, 2].plot(roll_estimated)
+
+    fig.savefig("./hw3/imgs/orientation.png")
+
+
 data, gt = read_mat("./hw3/data/studentdata0.mat")
 
-# Plot the trajectory of the ground truth
-figure = plot_trajectory(
-    [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in gt],
-    title="Ground Truth Trajectory",
-)
-figure.savefig("./test.png")
-
 map = Map()
-positions = []
+# for tag in map.tags:
+#     print(
+#         f"{tag}- p1: {tuple(map.tags[tag].bottom_left)}, p2: {tuple(map.tags[tag].bottom_right)}, p3: {tuple(map.tags[tag].top_right)}, p4: {tuple(map.tags[tag].top_left)}"
+#     )
+positions: List[np.ndarray] = []
+orientations: List[np.ndarray] = []
 for datum in data:
     # Estimate the pose of the camera
     if len(datum.tags) == 0:
         continue
     orientation, position = map.estimate_pose(datum.tags)
-    print(position)
     positions.append(position)
+    orientations.append(orientation)
 
+# Create multiplot and isometric plot
+create_trajectory_plots(gt, positions)
+create_orientation_plots(gt, orientations)
+figure = plot_trajectory(
+    [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in gt], "Ground Truth"
+)
+figure.savefig("./hw3/imgs/ground_truth.png")
 figure = plot_trajectory(
     [Coordinate(x=position[0], y=position[1], z=position[2]) for position in positions],
-    title="Estimated Trajectory via Camera",
+    "Estimated Trajectory",
 )
-figure.savefig("./test2.png")
+figure.savefig("./hw3/imgs/estimated.png")
