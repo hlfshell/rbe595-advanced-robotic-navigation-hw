@@ -383,7 +383,8 @@ def read_mat(filepath: str) -> Tuple[List[Data], List[GroundTruth]]:
                 tags=tags,
                 timestamp=datum["t"],
                 rpy=datum["rpy"],
-                drpy=datum["drpy"],
+                # drpy=datum["drpy"],
+                drpy=0.0,
                 acc=datum["acc"],
             )
         )
@@ -434,9 +435,9 @@ def plot_trajectory(
         axes.view_init(elev=0.0, azim=90.0)
     elif view == "y":
         axes.view_init(elev=0.0, azim=180.0)
-    axes.set_xlabel("x")
-    axes.set_ylabel("y")
-    axes.set_zlabel("z")
+    axes.set_xlabel("X")
+    axes.set_ylabel("Y")
+    axes.set_zlabel("Z")
     axes.dist = 11
     axes.set_title(title)
 
@@ -450,6 +451,7 @@ def create_overlay_plots(
     estimated_positions: List[np.ndarray],
     estimated_orientations: List[np.ndarray],
     estimated_times: List[float],
+    dataset_name: str,
 ):
     gt_coordinates = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
     estimated_coordinates = [
@@ -498,7 +500,7 @@ def create_overlay_plots(
     axs[2].plot(gt_times, roll_gt, label="Ground Truth")
     axs[2].plot(estimated_times, roll_estimated, label="Estimated")
 
-    fig.savefig("./hw3/imgs/orientation_merged.png")
+    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_orientation_merged.png")
 
     fig, axs = plt.subplots(1, 3, figsize=(20, 10))
     fig.suptitle("Trajectory Comparisons of Ground Truth and Estimated Positions")
@@ -511,17 +513,17 @@ def create_overlay_plots(
 
     axs[1].set_xlabel("Y")
     axs[1].set_ylabel("Z")
-    axs[1].set_title("X")
+    axs[1].set_title("Side X View")
     axs[1].scatter(y_gt, z_gt, c=z_gt, label="Ground Truth")
     axs[1].scatter(y_estimated, z_estimated, c=z_estimated, label="Estimated")
 
     axs[2].set_xlabel("X")
     axs[2].set_ylabel("Z")
-    axs[2].set_title("Y")
+    axs[2].set_title("Side Y View")
     axs[2].scatter(x_gt, z_gt, c=z_gt, label="Ground Truth")
     axs[2].scatter(x_estimated, z_estimated, c=z_estimated, label="Estimated")
 
-    fig.savefig("./hw3/imgs/trajectory_merged.png")
+    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_trajectory_merged.png")
 
     gt_coords = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
     estimated_coords = [
@@ -555,4 +557,4 @@ def create_overlay_plots(
         label="Estimated",
     )
 
-    fig.savefig("./hw3/imgs/isometric.png")
+    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_isometric.png")
