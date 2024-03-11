@@ -11,10 +11,6 @@ from world import (
 
 import numpy as np
 
-
-# # data, gt = read_mat("./hw3/data/studentdata0.mat")
-# data, gt = read_mat("./hw3/data/studentdata4.mat")
-
 datasets = [
     "./hw3/data/studentdata0.mat",
     "./hw3/data/studentdata1.mat",
