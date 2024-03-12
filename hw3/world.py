@@ -1,18 +1,12 @@
 from __future__ import annotations
-from cv2 import solvePnP, Rodrigues
-import numpy as np
-
-import matplotlib.pyplot as plt
-
-# from matplotlib.figure import Figure
-# from matplotlib.backends.backend_agg import FigureCanvasAgg as FigureCanvas
-
-from typing import Dict, List, NamedTuple, Optional, Tuple, Union
-
-from scipy.io import loadmat
 
 from math import pi
-import cv2
+from typing import Dict, List, NamedTuple, Optional, Tuple, Union
+
+import matplotlib.pyplot as plt
+import numpy as np
+from cv2 import Rodrigues, solvePnP
+from scipy.io import loadmat
 
 
 class ImageCoordinate(NamedTuple):

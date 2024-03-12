@@ -1,8 +1,8 @@
-from world import Data, GroundTruth, Map, read_mat, orientation_to_yaw_pitch_roll
-
 from typing import List
 
 import numpy as np
+from world import (Data, GroundTruth, Map, orientation_to_yaw_pitch_roll,
+                   read_mat)
 
 
 def estimate_covariances(

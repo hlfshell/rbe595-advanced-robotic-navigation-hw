@@ -1,15 +1,8 @@
 from typing import List
 
-from world import (
-    Map,
-    read_mat,
-    orientation_to_yaw_pitch_roll,
-    Coordinate,
-    plot_trajectory,
-    create_overlay_plots,
-)
-
 import numpy as np
+from world import (Coordinate, Map, create_overlay_plots,
+                   orientation_to_yaw_pitch_roll, plot_trajectory, read_mat)
 
 datasets = [
     "./hw3/data/studentdata0.mat",
