@@ -18,42 +18,47 @@ calculated_covariance_matrix = np.array(
             4.49014777e-04,
             3.66195490e-03,
             8.76154421e-04,
-        ][
+        ],
+        [
             2.66809900e-05,
             4.70388499e-03,
             -1.33432420e-03,
             -3.46505064e-03,
             1.07454548e-03,
             -1.69184839e-04,
-        ][
+        ],
+        [
             1.73906943e-03,
             -1.33432420e-03,
             9.00885499e-03,
             1.80220246e-03,
             3.27846190e-03,
             -1.11786368e-03,
-        ][
+        ],
+        [
             4.49014777e-04,
             -3.46505064e-03,
             1.80220246e-03,
             5.27060654e-03,
             1.01361187e-03,
             -5.86487142e-04,
-        ][
+        ],
+        [
             3.66195490e-03,
             1.07454548e-03,
             3.27846190e-03,
             1.01361187e-03,
             7.24994152e-03,
             -1.36454993e-03,
-        ][
+        ],
+        [
             8.76154421e-04,
             -1.69184839e-04,
             -1.11786368e-03,
             -5.86487142e-04,
             -1.36454993e-03,
             1.21162646e-03,
-        ]
+        ],
     ]
 )
 
@@ -65,7 +70,7 @@ class UKF:
         covariance_matrix: Optional[np.ndarray] = None,
     ):
 
-        if self.covariance_matrix is None:
+        if covariance_matrix is None:
             self.covariance_matrix = calculated_covariance_matrix
         else:
             self.covariance_matrix = covariance_matrix
@@ -104,23 +109,26 @@ class UKF:
 
         # Set the first column of sigma points to be mu, since that is the mean
         # of our distribution (our center point)
-        sigma_points[:, 0] = mu
+        sigma_points[:, 0] = mu.reshape((15,))
 
         # Square root via Cholesky
-        sigma = np.linalg.cholesky(
-            (number_of_points + self.kappa) * self.sigma
-        )  # <<<< is this right?
+        # sigma = np.linalg.cholesky(
+        #     (number_of_points + self.kappa) * self.sigma
+        # )  # <<<< is this right?
+        sigma = np.sqrt((number_of_points + self.kappa) * self.sigma)
         # Should it be the covariance matrix instead??
 
         # Now for each point that we wish to go through for our sigma points we
-        # move back and forth around the central point; thus we add, then subtract
-        # the delta to find symmetrical points. We skip the first point since
-        # we already set it to mu
-        for i in range(1, number_of_points):
-            sigma_points[:, i] = mu + sigma[:, i - 1]
-            sigma_points[:, i + number_of_points] = mu - sigma[:, i - 1]
+        # move back and forth around the central point; thus we add, then
+        # subtract the delta to find symmetrical points. We skip the first point
+        # since we already set it to mu
+        for i in range(0, number_of_points):
+            sigma_points[:, i + 1] = mu.reshape((15,)) + sigma[:, i - 1]
+            sigma_points[:, i + number_of_points + 1] = (
+                mu.reshape((15,)) - sigma[:, i - 1]
+            )
 
-        return sigma
+        return sigma_points
 
     def process_model(
         self, state: np.ndarray, delta_t: float, uw: np.ndarray, ua=np.ndarray
@@ -176,7 +184,7 @@ class UKF:
 
     def rmse(
         self, gts: List[GroundTruth], estimated_positions: List[np.ndarray]
-    ) -> Tuple(np.ndarray, np.ndarray):
+    ) -> Tuple[np.ndarray, np.ndarray]:
         """
         Given a set of ground truth points, return the total RMSE between the groundtruth
         and estimated positions. The return is the error in the position, and then the
@@ -260,3 +268,7 @@ class UKF:
             pass
 
         return filtered_positions
+
+
+x = UKF()
+print(x.find_sigma_points(np.ones((15, 1))))
