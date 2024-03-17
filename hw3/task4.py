@@ -163,14 +163,16 @@ class UKF:
 
         # Create our rotation matrix from the drone frame to the world frame
         # via our orientation roll pitch yaw
-        G_q = Rodrigues(orientation)
+        G_q, _ = Rodrigues(orientation)
         R_q = np.linalg.inv(G_q)
 
         # u_w is the gyroscope measurement, and u_a is the accelerometer
         # measurement from our data point
         xdot[0:3] = velocities
         xdot[3:6] = np.dot(G_q.T, uw)
-        xdot[6:9] = np.array([0, 0, g]) + np.dot(R_q, ua)
+        xdot[6:9] = np.array([0, 0, g]).reshape((3, 1)) + np.dot(
+            R_q, ua
+        )  # np.array([0, 0, g]) + np.dot(R_q, ua)
         xdot[9:12] = self.ng
         xdot[12:15] = self.na
 
@@ -271,4 +273,6 @@ class UKF:
 
 
 x = UKF()
-print(x.find_sigma_points(np.ones((15, 1))))
+# print(x.find_sigma_points(np.ones((15, 1))))
+
+print(x.process_model(np.ones((15, 1)), 0.1, np.ones((3, 1)) * 2, np.ones((3, 1)) * 3))
