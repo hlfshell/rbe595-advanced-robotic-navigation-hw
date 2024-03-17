@@ -170,13 +170,12 @@ class UKF:
         # measurement from our data point
         xdot[0:3] = velocities
         xdot[3:6] = np.dot(G_q.T, uw)
-        xdot[6:9] = np.array([0, 0, g]).reshape((3, 1)) + np.dot(
-            R_q, ua
-        )  # np.array([0, 0, g]) + np.dot(R_q, ua)
+        xdot[6:9] = np.array([0, 0, g]).reshape((3, 1)) + np.dot(R_q, ua)
         xdot[9:12] = self.ng
         xdot[12:15] = self.na
 
-        return xdot
+        # Calculate the new state with our xdot
+        return state + (xdot * delta_t)
 
     def update(self, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         pass
