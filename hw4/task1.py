@@ -676,7 +676,7 @@ class ParticleFilter:
 
 
 if __name__ == "__main__":
-    dataset = "./hw4/data/studentdata1.mat"
+    dataset = "./hw4/data/studentdata0.mat"
 
     noise_scale = 0.0
     index = 0
@@ -711,7 +711,10 @@ if __name__ == "__main__":
 
     # particle_filter = ParticleFilter(noise_scale=30, noise_scale_gyro=0.75)
     particle_filter = ParticleFilter(
-        particle_count=2_000, noise_scale=60, noise_scale_gyro=0.5
+        # particle_count=2_000, noise_scale=60, noise_scale_gyro=0.5
+        particle_count=2_000,
+        noise_scale=105,
+        noise_scale_gyro=0.01,
     )
     estimates, particles = particle_filter.run(data)
 
