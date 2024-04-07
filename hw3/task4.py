@@ -256,8 +256,6 @@ class UKF:
                 differences[i], differences[i].T
             )
 
-        raise "reached"
-
     def measurement_function(self, state: np.ndarray) -> np.ndarray:
         """
         measurement_function takes the current state and returns the measurement
