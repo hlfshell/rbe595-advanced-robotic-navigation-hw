@@ -1,10 +1,22 @@
 from typing import List, Optional, Tuple
 
 import numpy as np
-from world import Data, GroundTruth, Map, orientation_to_yaw_pitch_roll, read_mat
+from world import (
+    Coordinate,
+    Data,
+    GroundTruth,
+    Map,
+    orientation_to_yaw_pitch_roll,
+    read_mat,
+    plot_trajectory,
+)
 from task3 import interpolate_ground_truth
 
 from cv2 import Rodrigues
+
+from time import time
+
+from scipy.linalg import sqrtm
 
 
 # Covariance matrix below is calculated in task3.py through
@@ -68,8 +80,11 @@ class UKF:
     def __init__(
         self,
         measurement_covariance_matrix: Optional[np.ndarray] = None,
-        kappa: float = 0.1,
-        alpha: float = 1e-3,
+        # kappa: float = 0.1,
+        # alpha: float = 1e-3,
+        # beta: float = 2.0,
+        kappa: float = 1.0,
+        alpha: float = 1.0,
         beta: float = 2.0,
     ):
 
@@ -141,12 +156,7 @@ class UKF:
         self.weights_covariance[0] = weights_covariance_0
         self.weights_covariance[1:] = weight_i
 
-    def find_sigma_points(
-        self, mu: np.ndarray, sigma: Optional[np.ndarray] = None
-    ) -> np.ndarray:
-        if sigma is None:
-            sigma = self.measurement_covariance_matrix
-
+    def find_sigma_points(self, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         # Based on our system, we expect this to be a 15x31 matrix
         # sigma_points = np.zeros((number_of_points, self.number_of_sigma_points))
         sigma_points = np.zeros((self.number_of_sigma_points, self.n, 1))
@@ -157,17 +167,19 @@ class UKF:
 
         # Square root via Cholesky
         # sigma = np.linalg.cholesky((self.n + self.λ) * sigma)
-        sigma_sqrt = np.sqrt((self.number_of_sigma_points + self.λ) * sigma)
+        # sigma_sqrt = np.sqrt((self.number_of_sigma_points + self.λ) * sigma)
+        sigma_sqrt = sqrtm((self.number_of_sigma_points + self.λ) * sigma)
+
         # We need S to be a 15x15, and it is currently a 6x6, so we will
         # place it in the upper lefthand corner of a 15x15
         S = np.zeros((self.n, self.n))
-        S[0:6, 0:6] = sigma_sqrt
+        # S[0:6, 0:6] = sigma_sqrt
+        S = sigma_sqrt
 
         # Now for each point that we wish to go through for our sigma points we
         # move back and forth around the central point; thus we add, then
         # subtract the delta to find symmetrical points. We skip the first point
         # since we already set it to mu
-        print(sigma, sigma.shape, mu, mu.shape)
         for i in range(0, self.n):
             # REDO THIS TO BE COLUMN centric
             # sigma_points[:, i + 1] = mu.reshape((15,)) + S[:, i - 1]
@@ -228,14 +240,16 @@ class UKF:
         # Calculate the new state with our xdot
         return state + (xdot * delta_t)
 
-    def update(self, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    def update(
+        self, state: np.ndarray, mu: np.ndarray, sigma: np.ndarray, sigma_points
+    ) -> np.ndarray:
         """
-        update takes the current sigma points for the estimate and performs
-        the measurement update across them.
+        update takes the state, mubar, and sigmabar and performs the
+        update step
         """
         # Use the generated mu and sigma from the predict function (mubar and
-        # (sigmabar) to find new sigma points
-        sigma_points = self.find_sigma_points(mu, sigma=sigma)
+        # sigmabar) to find new sigma points
+        # sigma_points = self.find_sigma_points(mu, sigma)
 
         # Apply the measurement function across each new sigma point
         measurement_points = np.zeros_like(sigma_points)
@@ -245,16 +259,39 @@ class UKF:
         # Calculate the mean of the measurement points by their respective
         # weights. The weights have a 1/N term so the mean is calculated
         # through their addition
-        mu = np.zeros((self.n, 1))
+        zhat = np.zeros((self.n, 1))
         for i in range(0, self.number_of_sigma_points):
-            mu += self.weights_mean[i] * measurement_points[i]
+            zhat += self.weights_mean[i] * measurement_points[i]
 
-        sigma = np.zeros((self.n, self.n))
-        differences = measurement_points - mu
+        R = 0.0  # TODO - define R
+        R = np.zeros((self.n, self.n))
+        R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
+        St = np.zeros((self.n, self.n))
+        differences_z = measurement_points - zhat
         for i in range(0, self.number_of_sigma_points):
-            sigma += self.weights_covariance[i] * np.dot(
-                differences[i], differences[i].T
+            St += self.weights_covariance[i] * np.dot(
+                differences_z[i], differences_z[i].T
             )
+        St += R
+
+        # Find the cross-covariance
+        # Find the differences between the generated sigma points from
+        # earlier and mu
+        sigmahat_t = np.zeros((self.n, self.n))
+        differences_x = sigma_points - mu
+        for i in range(0, self.number_of_sigma_points):
+            sigmahat_t += self.weights_covariance[i] * np.dot(
+                differences_x[i], differences_z[i].T
+            )
+
+        # kalman_gain = np.dot(sigmahat_t, np.linalg.inv(St))
+        kalman_gain = np.dot(sigmahat_t, np.linalg.pinv(St))
+
+        # Update the mean and covariance
+        current_position = mu + np.dot(kalman_gain, state - zhat)
+        covariance = sigma - np.dot(kalman_gain, St).dot(kalman_gain.T)
+
+        return current_position, covariance
 
     def measurement_function(self, state: np.ndarray) -> np.ndarray:
         """
@@ -288,24 +325,24 @@ class UKF:
         # Calculate the mean of the transitioned points by their respective
         # weights. Since we included a 1/N term in the weights, adding them
         # together effectively moves us towards a weighted mean
-        Q = 0  # TODO Set Q to something
         mu = np.zeros((self.n, 1))
         for i in range(0, self.number_of_sigma_points):
-            mu += (self.weights_mean[i] * transitioned_points[i]) + Q
+            mu += self.weights_mean[i] * transitioned_points[i]
 
         # Calculate the covariance of the transitioned points by their
         # respective weights. As before, the weights contain a 1/N term so
         # we are effectively finding the average. We expect a NxN output
         # for our sigma matrix
+        Q = np.random.normal(scale=5e-3, size=(15, 15))
         differences = transitioned_points - mu
         sigma = np.zeros((self.n, self.n))
         for i in range(0, self.n):
-            print("differences sizing", differences[i].shape)
             sigma += self.weights_covariance[i] * np.dot(
                 differences[i], differences[i].T
             )
+        sigma += Q
         # Return sigma to 6x6 by just taking the upper left corner
-        sigma = sigma[0:6, 0:6]
+        # sigma = sigma[0:6, 0:6]
 
         return mu, sigma
 
@@ -380,6 +417,8 @@ class UKF:
         state[6:9] = np.zeros((3, 1))
         previous_state_timestamp = estimated_positions[0].timestamp
 
+        process_covariance_matrix = np.eye(15) * 1e-3
+
         for index, data in enumerate(estimated_positions):
             # Skip the 0th estimated position
             if index == 0:
@@ -398,17 +437,21 @@ class UKF:
 
             # Get our sigma points. We expect (self.n * 2) + 1 = 31 sigma points
             # for a (15,31) matrix
-            sigma_points = self.find_sigma_points(state)
+            sigma_points = self.find_sigma_points(state, process_covariance_matrix)
 
             # Run the prediction step based off of our state transition
-            mu, sigma = self.predict(sigma_points, ua, uw, delta_t)
+            mubar, sigmabar = self.predict(sigma_points, ua, uw, delta_t)
 
             # Run the update step to filter our estimated position and resulting
             # sigma (mu and sigma)
-            mu, sigma = self.update(mu, sigma)
+            mu, sigma = self.update(state, mubar, sigmabar, sigma_points)
 
-            # Save the estimated position and timestamp
-            pass
+            # Our current position is mu, and our new process covariance
+            # matrix is sigma
+            process_covariance_matrix = sigma
+            state = mu
+
+            filtered_positions.append(state)
 
         return filtered_positions
 
@@ -436,4 +479,27 @@ if __name__ == "__main__":
         orientations.append(orientation_to_yaw_pitch_roll(orientation))
         times.append(datum.timestamp)
 
+    start = time()
     results = x.run(data)
+    print(f"Time taken for UKF: {time() - start:.2f} seconds")
+
+    print("results are", len(results), results[-1])
+
+    # Create trajectory plots from output
+    figure = plot_trajectory(
+        [
+            Coordinate(x=position[0], y=position[1], z=position[2])
+            for position in results
+        ],
+        "Test plot",
+    )
+    figure.savefig("./test_ukf_trajectory.png")
+
+    # figure = plot_trajectory(
+    #     [
+    #         Coordinate(x=position[0], y=position[1], z=position[2])
+    #         for position in positions
+    #     ],
+    #     "Estimated Trajectory",
+    # )
+    # figure.savefig(f"./hw3/imgs/task1_2/{dataset_name}_estimated.png")
