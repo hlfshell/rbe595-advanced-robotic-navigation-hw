@@ -24,7 +24,7 @@ from math import pi
 
 from utils import interpolate_ground_truth
 
-from plot import plot_rmse_loss
+from plot import plot_rmse_loss, create_overlay_plots, isometric_plot
 
 
 # Covariance matrix below is calculated in task3.py through
@@ -692,124 +692,124 @@ class UKF:
         return filtered_positions
 
 
-def create_overlay_plots(
-    ground_truth: List[GroundTruth],
-    estimated_positions: List[np.ndarray],
-    estimated_orientations: List[np.ndarray],
-    estimated_times: List[float],
-    dataset_name: str,
-):
-    gt_coordinates = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
-    estimated_coordinates = [
-        Coordinate(x=position[0], y=position[1], z=position[2])
-        for position in estimated_positions
-    ]
+# # def create_overlay_plots(
+#     ground_truth: List[GroundTruth],
+#     estimated_positions: List[np.ndarray],
+#     estimated_orientations: List[np.ndarray],
+#     estimated_times: List[float],
+#     dataset_name: str,
+# ):
+#     gt_coordinates = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
+#     estimated_coordinates = [
+#         Coordinate(x=position[0], y=position[1], z=position[2])
+#         for position in estimated_positions
+#     ]
 
-    x_gt = [coord.x for coord in gt_coordinates]
-    y_gt = [coord.y for coord in gt_coordinates]
-    z_gt = [coord.z for coord in gt_coordinates]
-    gt_times = [gti.timestamp for gti in ground_truth]
+#     x_gt = [coord.x for coord in gt_coordinates]
+#     y_gt = [coord.y for coord in gt_coordinates]
+#     z_gt = [coord.z for coord in gt_coordinates]
+#     gt_times = [gti.timestamp for gti in ground_truth]
 
-    x_estimated = [coord.x for coord in estimated_coordinates]
-    y_estimated = [coord.y for coord in estimated_coordinates]
-    z_estimated = [coord.z for coord in estimated_coordinates]
+#     x_estimated = [coord.x for coord in estimated_coordinates]
+#     y_estimated = [coord.y for coord in estimated_coordinates]
+#     z_estimated = [coord.z for coord in estimated_coordinates]
 
-    yaw_gt = [gti.yaw for gti in ground_truth]
-    pitch_gt = [gti.pitch for gti in ground_truth]
-    roll_gt = [gti.roll for gti in ground_truth]
+#     yaw_gt = [gti.yaw for gti in ground_truth]
+#     pitch_gt = [gti.pitch for gti in ground_truth]
+#     roll_gt = [gti.roll for gti in ground_truth]
 
-    yaw_estimated = [orientation[2] for orientation in estimated_orientations]
-    pitch_estimated = [orientation[1] for orientation in estimated_orientations]
-    roll_estimated = [orientation[0] for orientation in estimated_orientations]
+#     yaw_estimated = [orientation[2] for orientation in estimated_orientations]
+#     pitch_estimated = [orientation[1] for orientation in estimated_orientations]
+#     roll_estimated = [orientation[0] for orientation in estimated_orientations]
 
-    fig, axs = plt.subplots(1, 3, figsize=(20, 10))
-    fig.suptitle("Orientation Comparisons of Ground Truth and Estimated Positions")
+#     fig, axs = plt.subplots(1, 3, figsize=(20, 10))
+#     fig.suptitle("Orientation Comparisons of Ground Truth and Estimated Positions")
 
-    axs[0].set_xlabel("Time")
-    axs[0].set_ylabel("Yaw")
-    axs[0].set_title("Yaw")
-    axs[0].set_ylim(-pi / 2, pi / 2)
-    axs[0].plot(gt_times, yaw_gt, label="Ground Truth")
-    axs[0].plot(estimated_times, yaw_estimated, label="Estimated")
+#     axs[0].set_xlabel("Time")
+#     axs[0].set_ylabel("Yaw")
+#     axs[0].set_title("Yaw")
+#     axs[0].set_ylim(-pi / 2, pi / 2)
+#     axs[0].plot(gt_times, yaw_gt, label="Ground Truth")
+#     axs[0].plot(estimated_times, yaw_estimated, label="Estimated")
 
-    axs[1].set_xlabel("Time")
-    axs[1].set_ylabel("Pitch")
-    axs[1].set_title("Pitch")
-    axs[1].set_ylim(-pi / 2, pi / 2)
-    axs[1].plot(gt_times, pitch_gt, label="Ground Truth")
-    axs[1].plot(estimated_times, pitch_estimated, label="Estimated")
+#     axs[1].set_xlabel("Time")
+#     axs[1].set_ylabel("Pitch")
+#     axs[1].set_title("Pitch")
+#     axs[1].set_ylim(-pi / 2, pi / 2)
+#     axs[1].plot(gt_times, pitch_gt, label="Ground Truth")
+#     axs[1].plot(estimated_times, pitch_estimated, label="Estimated")
 
-    axs[2].set_xlabel("Time")
-    axs[2].set_ylabel("Roll")
-    axs[2].set_title("Roll")
-    axs[2].set_ylim(-pi / 2, pi / 2)
-    axs[2].plot(gt_times, roll_gt, label="Ground Truth")
-    axs[2].plot(estimated_times, roll_estimated, label="Estimated")
+#     axs[2].set_xlabel("Time")
+#     axs[2].set_ylabel("Roll")
+#     axs[2].set_title("Roll")
+#     axs[2].set_ylim(-pi / 2, pi / 2)
+#     axs[2].plot(gt_times, roll_gt, label="Ground Truth")
+#     axs[2].plot(estimated_times, roll_estimated, label="Estimated")
 
-    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_orientation_merged.png")
+#     fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_orientation_merged.png")
 
-    fig, axs = plt.subplots(1, 3, figsize=(20, 10))
-    fig.suptitle("Trajectory Comparisons of Ground Truth and Estimated Positions")
+#     fig, axs = plt.subplots(1, 3, figsize=(20, 10))
+#     fig.suptitle("Trajectory Comparisons of Ground Truth and Estimated Positions")
 
-    axs[0].set_xlabel("X")
-    axs[0].set_ylabel("Y")
-    axs[0].set_title("Top-Down")
-    axs[0].scatter(x_gt, y_gt, c=z_gt, label="Ground Truth")
-    axs[0].scatter(x_estimated, y_estimated, c=z_estimated, label="Estimated")
+#     axs[0].set_xlabel("X")
+#     axs[0].set_ylabel("Y")
+#     axs[0].set_title("Top-Down")
+#     axs[0].scatter(x_gt, y_gt, c=z_gt, label="Ground Truth")
+#     axs[0].scatter(x_estimated, y_estimated, c=z_estimated, label="Estimated")
 
-    axs[1].set_xlabel("Y")
-    axs[1].set_ylabel("Z")
-    axs[1].set_title("Side X View")
-    axs[1].scatter(y_gt, z_gt, c=z_gt, label="Ground Truth")
-    axs[1].scatter(y_estimated, z_estimated, c=z_estimated, label="Estimated")
+#     axs[1].set_xlabel("Y")
+#     axs[1].set_ylabel("Z")
+#     axs[1].set_title("Side X View")
+#     axs[1].scatter(y_gt, z_gt, c=z_gt, label="Ground Truth")
+#     axs[1].scatter(y_estimated, z_estimated, c=z_estimated, label="Estimated")
 
-    axs[2].set_xlabel("X")
-    axs[2].set_ylabel("Z")
-    axs[2].set_title("Side Y View")
-    axs[2].scatter(x_gt, z_gt, c=z_gt, label="Ground Truth")
-    axs[2].scatter(x_estimated, z_estimated, c=z_estimated, label="Estimated")
+#     axs[2].set_xlabel("X")
+#     axs[2].set_ylabel("Z")
+#     axs[2].set_title("Side Y View")
+#     axs[2].scatter(x_gt, z_gt, c=z_gt, label="Ground Truth")
+#     axs[2].scatter(x_estimated, z_estimated, c=z_estimated, label="Estimated")
 
-    fig.savefig(f"./hw3/imgs/task4/{dataset_name}_trajectory_merged.png")
+#     fig.savefig(f"./hw3/imgs/task4/{dataset_name}_trajectory_merged.png")
 
-    gt_coords = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
-    estimated_coords = [
-        Coordinate(x=position[0], y=position[1], z=position[2])
-        for position in estimated_positions
-    ]
+#     gt_coords = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
+#     estimated_coords = [
+#         Coordinate(x=position[0], y=position[1], z=position[2])
+#         for position in estimated_positions
+#     ]
 
-    fig = plt.figure(figsize=(10, 6), layout="tight")
-    axes = plt.axes(projection="3d")
-    axes.set_xlabel("X")
-    axes.set_ylabel("Y")
-    axes.set_zlabel("Z")
-    axes.dist = 11
-    axes.set_title("Ground Truth and Estimated Positions Isometric View")
+#     fig = plt.figure(figsize=(10, 6), layout="tight")
+#     axes = plt.axes(projection="3d")
+#     axes.set_xlabel("X")
+#     axes.set_ylabel("Y")
+#     axes.set_zlabel("Z")
+#     axes.dist = 11
+#     axes.set_title("Ground Truth and Estimated Positions Isometric View")
 
-    axes.scatter3D(
-        [coord.x for coord in gt_coords],
-        [coord.y for coord in gt_coords],
-        [coord.z for coord in gt_coords],
-        c=[coord.z for coord in gt_coords],
-        linewidths=0.5,
-        label="Ground Truth",
-    )
+#     axes.scatter3D(
+#         [coord.x for coord in gt_coords],
+#         [coord.y for coord in gt_coords],
+#         [coord.z for coord in gt_coords],
+#         c=[coord.z for coord in gt_coords],
+#         linewidths=0.5,
+#         label="Ground Truth",
+#     )
 
-    axes.scatter3D(
-        [coord.x for coord in estimated_coords],
-        [coord.y for coord in estimated_coords],
-        [coord.z for coord in estimated_coords],
-        c=[coord.z for coord in estimated_coords],
-        linewidths=0.5,
-        label="Estimated",
-    )
+#     axes.scatter3D(
+#         [coord.x for coord in estimated_coords],
+#         [coord.y for coord in estimated_coords],
+#         [coord.z for coord in estimated_coords],
+#         c=[coord.z for coord in estimated_coords],
+#         linewidths=0.5,
+#         label="Estimated",
+#     )
 
-    fig.savefig(f"./hw3/imgs/task4/{dataset_name}_isometric.png")
+#     fig.savefig(f"./hw3/imgs/task4/{dataset_name}_isometric.png")
 
 
 if __name__ == "__main__":
     x = UKF()
 
-    dataset = "./hw3/data/studentdata3.mat"
+    dataset = "./hw3/data/studentdata0.mat"
 
     base_data, gt = read_mat(dataset)
 
@@ -848,32 +848,8 @@ if __name__ == "__main__":
     for i in range(len(results) - 6, len(results)):
         print(i, (results[i][0][0], results[i][1][0], results[i][2][0]))
 
-    fig = plt.figure(figsize=(10, 6), layout="tight")
-    axes = plt.axes(projection="3d")
-    axes.set_xlabel("X")
-    axes.set_ylabel("Y")
-    axes.set_zlabel("Z")
-    axes.dist = 11
-    axes.set_title("Ground Truth and Estimated Positions Isometric View")
+    "Ground Truth and Estimated Positions Isometric View"
     gt_coords = [Coordinate(x=gt[i].x, y=gt[i].y, z=gt[i].z) for i in range(len(gt))]
-    axes.scatter3D(
-        [coord.x for coord in gt_coords],
-        [coord.y for coord in gt_coords],
-        [coord.z for coord in gt_coords],
-        c=[coord.z for coord in gt_coords],
-        linewidths=0.5,
-        label="Ground Truth",
-    )
-    axes.scatter3D(
-        [coord[0] for coord in results],
-        [coord[1] for coord in results],
-        [coord[2] for coord in results],
-        c=[coord[2] for coord in results],
-        linewidths=0.5,
-        label="Estimated",
-    )
-
-    fig.savefig("./test_ukf_isometric.png")
 
     position_rmse, orientation_rmse = plot_rmse_loss(
         interpolated_gt,
@@ -883,6 +859,26 @@ if __name__ == "__main__":
     )
     position_rmse.savefig("./test_ukf_position_rmse.png")
     orientation_rmse.savefig("./test_ukf_orientation_rmse.png")
+
+    positions_plot, orientations_plot = create_overlay_plots(
+        interpolated_gt,
+        results,
+        times,
+    )
+    positions_plot.savefig("./test_ukf_positions.png")
+    orientations_plot.savefig("./test_ukf_orientations.png")
+
+    isometric = isometric_plot(
+        "Isometric View of Ground Truth and Estimated Positions",
+        "Ground Truth",
+        [Coordinate(x=gt[i].x, y=gt[i].y, z=gt[i].z) for i in range(len(gt))],
+        "UKF Estimation",
+        [
+            Coordinate(x=position[0], y=position[1], z=position[2])
+            for position in results
+        ],
+    )
+    isometric.savefig("./test_ukf_isometric.png")
 
     # Create trajectory plots from output
     # figure = plot_trajectory(
