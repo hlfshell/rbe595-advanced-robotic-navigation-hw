@@ -652,6 +652,399 @@ The results for each of these are as follows:
 
 \section*{Task 4}
 
-Coming soon...
+In this section we are tasked with creating a nonlinear Kalman Filter to deal with tracking our drone. To this end we have created an Unscented Kalman Filter (UKF), with the code for this found in the attached \textbf{task4.py}.
+
+The UKF deals with nonlinearities in the system it is tracking by selecting a set of sigma points around the assumed position (the mean
+of the probability distribution of where it might be). These sigma points undergo a similar transition from our state transition (also called process model - essentially, the model of expected movement given our understanding of the system). These transitioned sigma points are then used to calculate the mean and covariance of the system at the next timestep, and we can then find a weighted average of these to get our new state estimate.
+
+The weights for our UKF system are defined at the initialization of our filter. Given a set of constants $\alpha$, $\beta$, and $\kappa$, with default values from tuning set to $1.0$, $2.0$, and $1.0$ respectively, we can calculate our state ($\mu$) and covariance ($\sigma$) weights as follows:
+
+\begin{equation}
+    \lambda = \alpha^2 (n + \kappa) - n
+\end{equation}
+
+\noindent...wherein $n$ is the dimensionality of our state vector $\mu$. The 0th weight for our mean is then:
+
+\begin{equation}
+    \frac{\lambda}{n + \lambda}
+\end{equation}
+
+\noindent...and the 0th weight for our covariance is:
+
+\begin{equation}
+    \frac{\lambda}{n + \lambda} + (1 - \alpha^2 + \beta)
+\end{equation}
+
+\noindent...and the remaining weights for both state and covariance are equivalent, at:
+
+\begin{equation}
+    \frac{1}{2(n + \lambda)}
+\end{equation}
+
+For our measurement covariance matrix we are utilizing the averaged matrix from experimental data derived in Task 3.
+
+To find the sigma points within our system, we utilize the Julier method for finding sigma points, specifically:
+
+\begin{python}
+    def find_sigma_points(self, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
+    # Based on our system, we expect this to be a 15x31 matrix
+    # sigma_points = np.zeros((number_of_points, self.number_of_sigma_points))
+    sigma_points = np.zeros((self.number_of_sigma_points, self.n, 1))
+
+    # Set the first column of sigma points to be mu, since that is the mean
+    # of our distribution (our center point)
+    sigma_points[0] = mu
+
+    S = sqrtm((self.n + self.kappa) * sigma)
+
+    # Now for each point that we wish to go through for our sigma points we
+    # move back and forth around the central point; thus we add, then
+    # subtract the delta to find symmetrical points. We skip the first point
+    # since we already set it to mu
+    # This is an implementation of the Julier Sigma Point Method
+    for i in range(self.n):
+    sigma_points[i + 1] = mu + S[i].reshape((15, 1))
+    sigma_points[self.n + i + 1] = mu - S[i].reshape((15, 1))
+
+    return sigma_points
+\end{python}
+
+Unfortunately sometimes a slight numerical instability can occur due to tuning issues within the UKF, resulting in the covariance matrix breaking its symmetric positive-definite properties one would expect from it. this breaks down during the update step wherein we take the square root of our matrix, resulting in complex values that disrupt the entire process. To this end, we created a safety check that, if, post calculation of the new process covariance matrix $\sigma$, we find that it is not symmetric positive-definite, we slowly increase a small amount of positive jitter to the calculate covariance matrix's eigen values until it is positive definite. This is done in the following code:
+
+\begin{python}
+    def fix_covariance(self, covariance: np.ndarray, jitter: float = 1e-3):
+    """
+    Fix the covariance matrix to be positive definite with the
+    jitter method on its eigen values. Will continually add more
+    jitter until the matrix is symmetric positive definite.
+    """
+    # Is it symmetric?
+    symmetric = np.allclose(covariance, covariance.T)
+    # Is it positive definite?
+    try:
+    np.linalg.cholesky(covariance)
+    positive_definite = True
+    except np.linalg.LinAlgError:
+    positive_definite = False
+
+    # If the result is symmetric and positive definite, return it
+    if symmetric and positive_definite:
+    return covariance
+
+    # Make covariance matrix symmetric
+    covariance = (covariance + covariance.T) / 2
+
+    # Set the eigen values to zero
+    eig_values, eig_vectors = np.linalg.eig(covariance)
+    eig_values[eig_values < 0] = 0
+    eig_values += jitter
+
+    # Reconstruct the matrix
+    covariance = eig_vectors.dot(np.diag(eig_values)).dot(eig_vectors.T)
+
+    return self.fix_covariance(covariance, jitter=10 * jitter)
+\end{python}
+
+Below we will plot the ground truth of positions and orientations of the drone as measured from our motion capture system against the UKF estimated positions and orientations of the drone. We will then plot the camera estimated positions (from \textit{solvePnP} function) versus ground truth via RMSE, and do the same with our UKF method, to compare relative tracking accuracy.
+
+\subsection*{Dataset 0}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata0_ukf_isometric.png}
+    \caption{Dataset 0 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata0_ukf_positions.png}
+    \caption{Dataset 0 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata0_ukf_orientations.png}
+    \caption{Dataset 0 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata0_ukf_position_rmse.png}
+    \caption{Dataset 0 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata0_ukf_orientation_rmse.png}
+    \caption{Dataset 0 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 1}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata1_ukf_isometric.png}
+    \caption{Dataset 1 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata1_ukf_positions.png}
+    \caption{Dataset 1 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata1_ukf_orientations.png}
+    \caption{Dataset 1 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata1_ukf_position_rmse.png}
+    \caption{Dataset 1 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata1_ukf_orientation_rmse.png}
+    \caption{Dataset 1 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 2}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata2_ukf_isometric.png}
+    \caption{Dataset 2 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata2_ukf_positions.png}
+    \caption{Dataset 2 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata2_ukf_orientations.png}
+    \caption{Dataset 2 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata2_ukf_position_rmse.png}
+    \caption{Dataset 2 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata2_ukf_orientation_rmse.png}
+    \caption{Dataset 2 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 3}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata3_ukf_isometric.png}
+    \caption{Dataset 3 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata3_ukf_positions.png}
+    \caption{Dataset 3 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata3_ukf_orientations.png}
+    \caption{Dataset 3 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata3_ukf_position_rmse.png}
+    \caption{Dataset 3 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata3_ukf_orientation_rmse.png}
+    \caption{Dataset 3 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 4}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata4_ukf_isometric.png}
+    \caption{Dataset 4 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata4_ukf_positions.png}
+    \caption{Dataset 4 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata4_ukf_orientations.png}
+    \caption{Dataset 4 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata4_ukf_position_rmse.png}
+    \caption{Dataset 4 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata4_ukf_orientation_rmse.png}
+    \caption{Dataset 4 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 5}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata5_ukf_isometric.png}
+    \caption{Dataset 5 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata5_ukf_positions.png}
+    \caption{Dataset 5 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata5_ukf_orientations.png}
+    \caption{Dataset 5 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata5_ukf_position_rmse.png}
+    \caption{Dataset 5 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata5_ukf_orientation_rmse.png}
+    \caption{Dataset 5 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 6}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata6_ukf_isometric.png}
+    \caption{Dataset 6 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata6_ukf_positions.png}
+    \caption{Dataset 6 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata6_ukf_orientations.png}
+    \caption{Dataset 6 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata6_ukf_position_rmse.png}
+    \caption{Dataset 6 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata6_ukf_orientation_rmse.png}
+    \caption{Dataset 6 Orientation RMSE Comparisons}
+\end{figure}
+
+\subsection*{Dataset 7}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata7_ukf_isometric.png}
+    \caption{Dataset 7 Trajectory}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata7_ukf_positions.png}
+    \caption{Dataset 7 Trajectories}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata7_ukf_orientations.png}
+    \caption{Dataset 7 Orientations}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata7_ukf_position_rmse.png}
+    \caption{Dataset 7 Positional RMSE Comparisons}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.8\textwidth]{./imgs/task4/studentdata7_ukf_orientation_rmse.png}
+    \caption{Dataset 7 Orientation RMSE Comparisons}
+\end{figure}
+
+We also calculated the average RMSE for each dataset for both the camera and UKF methods, and then calculated a cumulative RMSE value for camera and UKF methods across all datasets. From this we can infer if our UKF method of tracking is more accurate than the camera method.
+
+\begin{table}
+    \centering
+    \begin{tabular}{|c|c|c|}
+        \hline
+        \textbf{Dataset} & \textbf{Camera RMSE} & \textbf{UKF RMSE} \\
+        \hline
+        0                & 0.58                 & 0.08              \\
+        1                & 0.57                 & 0.09              \\
+        2                & 0.49                 & 0.09              \\
+        3                & 0.50                 & 0.08              \\
+        4                & 0.68                 & 0.08              \\
+        5                & 0.88                 & 0.09              \\
+        6                & 0.55                 & 0.08              \\
+        7                & 0.70                 & 0.08              \\
+        \textbf{All}     & \textbf{0.65}        & \textbf{0.08}     \\
+        \hline
+    \end{tabular}
+    \caption{Average Positional RMSE for Camera and UKF Methods}
+\end{table}
+
+\begin{table}
+    \centering
+    \begin{tabular}{|c|c|c|}
+        \hline
+        \textbf{Dataset} & \textbf{Camera RMSE} & \textbf{UKF RMSE} \\
+        \hline
+        0                & 0.09                 & 0.10              \\
+        1                & 0.18                 & 0.04              \\
+        2                & 0.31                 & 0.05              \\
+        3                & 0.19                 & 0.05              \\
+        4                & 0.23                 & 0.05              \\
+        5                & 0.13                 & 0.07              \\
+        6                & 0.19                 & 0.07              \\
+        7                & 0.23                 & 0.06              \\
+        \textbf{All}     & \textbf{0.24}        & \textbf{0.06}     \\
+        \hline
+    \end{tabular}
+    \caption{Average Orientation RMSE for Camera and UKF Methods}
+\end{table}
+
+We can see a clear trend of the UKF filter being more accurate than simply utilizing the raw camera localization method through \textit{solvePnP}.
 
 \end{document}

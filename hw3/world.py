@@ -62,8 +62,9 @@ class Data(NamedTuple):
     tags: List[AprilTag]
     timestamp: float
     rpy: np.ndarray
-    drpy: np.ndarray
+    # drpy: np.ndarray
     acc: np.ndarray
+    omg: np.ndarray
 
 
 class GroundTruth(NamedTuple):
@@ -371,6 +372,11 @@ def read_mat(filepath: str) -> Tuple[List[Data], List[GroundTruth]]:
                 )
             )
 
+        if "drpy" in datum:
+            omg = datum["drpy"]
+        else:
+            omg = datum["omg"]
+
         data.append(
             Data(
                 img=datum["img"],
@@ -378,8 +384,9 @@ def read_mat(filepath: str) -> Tuple[List[Data], List[GroundTruth]]:
                 timestamp=datum["t"],
                 rpy=datum["rpy"],
                 # drpy=datum["drpy"],
-                drpy=0.0,
+                # drpy=0.0,
                 acc=datum["acc"],
+                omg=omg,
             )
         )
 
@@ -405,150 +412,3 @@ def read_mat(filepath: str) -> Tuple[List[Data], List[GroundTruth]]:
         )
 
     return data, ground_truth
-
-
-def plot_trajectory(
-    trajectory: List[Coordinate],
-    title: str = "",
-    view: Optional[str] = None,
-):
-    """
-    Given a list of coordinates as a trajectory plot the
-    trajectory in 3D space.
-    """
-
-    x = [coord.x for coord in trajectory]
-    y = [coord.y for coord in trajectory]
-    z = [coord.z for coord in trajectory]
-
-    figure = plt.figure(figsize=(10, 6), layout="tight")
-    axes = plt.axes(projection="3d")
-    if view == "top" or view == "z":
-        axes.view_init(elev=90.0, azim=0)
-    elif view == "x":
-        axes.view_init(elev=0.0, azim=90.0)
-    elif view == "y":
-        axes.view_init(elev=0.0, azim=180.0)
-    axes.set_xlabel("X")
-    axes.set_ylabel("Y")
-    axes.set_zlabel("Z")
-    axes.dist = 11
-    axes.set_title(title)
-
-    axes.scatter3D(x, y, z, c=z, linewidths=0.5)
-
-    return figure
-
-
-def create_overlay_plots(
-    ground_truth: List[GroundTruth],
-    estimated_positions: List[np.ndarray],
-    estimated_orientations: List[np.ndarray],
-    estimated_times: List[float],
-    dataset_name: str,
-):
-    gt_coordinates = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
-    estimated_coordinates = [
-        Coordinate(x=position[0], y=position[1], z=position[2])
-        for position in estimated_positions
-    ]
-
-    x_gt = [coord.x for coord in gt_coordinates]
-    y_gt = [coord.y for coord in gt_coordinates]
-    z_gt = [coord.z for coord in gt_coordinates]
-    gt_times = [gti.timestamp for gti in ground_truth]
-
-    x_estimated = [coord.x for coord in estimated_coordinates]
-    y_estimated = [coord.y for coord in estimated_coordinates]
-    z_estimated = [coord.z for coord in estimated_coordinates]
-
-    yaw_gt = [gti.yaw for gti in ground_truth]
-    pitch_gt = [gti.pitch for gti in ground_truth]
-    roll_gt = [gti.roll for gti in ground_truth]
-
-    yaw_estimated = [orientation[2] for orientation in estimated_orientations]
-    pitch_estimated = [orientation[1] for orientation in estimated_orientations]
-    roll_estimated = [orientation[0] for orientation in estimated_orientations]
-
-    fig, axs = plt.subplots(1, 3, figsize=(20, 10))
-    fig.suptitle("Orientation Comparisons of Ground Truth and Estimated Positions")
-
-    axs[0].set_xlabel("Time")
-    axs[0].set_ylabel("Yaw")
-    axs[0].set_title("Yaw")
-    axs[0].set_ylim(-pi / 2, pi / 2)
-    axs[0].plot(gt_times, yaw_gt, label="Ground Truth")
-    axs[0].plot(estimated_times, yaw_estimated, label="Estimated")
-
-    axs[1].set_xlabel("Time")
-    axs[1].set_ylabel("Pitch")
-    axs[1].set_title("Pitch")
-    axs[1].set_ylim(-pi / 2, pi / 2)
-    axs[1].plot(gt_times, pitch_gt, label="Ground Truth")
-    axs[1].plot(estimated_times, pitch_estimated, label="Estimated")
-
-    axs[2].set_xlabel("Time")
-    axs[2].set_ylabel("Roll")
-    axs[2].set_title("Roll")
-    axs[2].set_ylim(-pi / 2, pi / 2)
-    axs[2].plot(gt_times, roll_gt, label="Ground Truth")
-    axs[2].plot(estimated_times, roll_estimated, label="Estimated")
-
-    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_orientation_merged.png")
-
-    fig, axs = plt.subplots(1, 3, figsize=(20, 10))
-    fig.suptitle("Trajectory Comparisons of Ground Truth and Estimated Positions")
-
-    axs[0].set_xlabel("X")
-    axs[0].set_ylabel("Y")
-    axs[0].set_title("Top-Down")
-    axs[0].scatter(x_gt, y_gt, c=z_gt, label="Ground Truth")
-    axs[0].scatter(x_estimated, y_estimated, c=z_estimated, label="Estimated")
-
-    axs[1].set_xlabel("Y")
-    axs[1].set_ylabel("Z")
-    axs[1].set_title("Side X View")
-    axs[1].scatter(y_gt, z_gt, c=z_gt, label="Ground Truth")
-    axs[1].scatter(y_estimated, z_estimated, c=z_estimated, label="Estimated")
-
-    axs[2].set_xlabel("X")
-    axs[2].set_ylabel("Z")
-    axs[2].set_title("Side Y View")
-    axs[2].scatter(x_gt, z_gt, c=z_gt, label="Ground Truth")
-    axs[2].scatter(x_estimated, z_estimated, c=z_estimated, label="Estimated")
-
-    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_trajectory_merged.png")
-
-    gt_coords = [Coordinate(x=gti.x, y=gti.y, z=gti.z) for gti in ground_truth]
-    estimated_coords = [
-        Coordinate(x=position[0], y=position[1], z=position[2])
-        for position in estimated_positions
-    ]
-
-    fig = plt.figure(figsize=(10, 6), layout="tight")
-    axes = plt.axes(projection="3d")
-    axes.set_xlabel("X")
-    axes.set_ylabel("Y")
-    axes.set_zlabel("Z")
-    axes.dist = 11
-    axes.set_title("Ground Truth and Estimated Positions Isometric View")
-
-    axes.scatter3D(
-        [coord.x for coord in gt_coords],
-        [coord.y for coord in gt_coords],
-        [coord.z for coord in gt_coords],
-        c=[coord.z for coord in gt_coords],
-        linewidths=0.5,
-        label="Ground Truth",
-    )
-
-    axes.scatter3D(
-        [coord.x for coord in estimated_coords],
-        [coord.y for coord in estimated_coords],
-        [coord.z for coord in estimated_coords],
-        c=[coord.z for coord in estimated_coords],
-        linewidths=0.5,
-        label="Estimated",
-    )
-
-    fig.savefig(f"./hw3/imgs/task1_2/{dataset_name}_isometric.png")

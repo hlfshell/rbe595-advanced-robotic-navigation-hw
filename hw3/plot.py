@@ -89,6 +89,12 @@ def isometric_plot(title: str, *args) -> plt.Figure:
     Plots the isometric plots. For each pair in the args, grab, respectively,
     the label for the dataset, and its datapoints.
     """
+    if args is None or len(args) == 0:
+        raise "No plotting arguments provided"
+    elif len(args) % 2 != 0:
+        raise "Arguments must be in pairs of label and data"
+
+    more_than_one = len(args) > 2
 
     fig = plt.figure(figsize=(10, 6), layout="tight")
     axes = plt.axes(projection="3d")
@@ -111,7 +117,8 @@ def isometric_plot(title: str, *args) -> plt.Figure:
             linewidths=0.5,
             label=label,
         )
-    axes.legend()
+    # if more_than_one:
+    #     axes.legend()
 
     return fig
 
@@ -158,26 +165,30 @@ def create_overlay_plots(
         "Orientation Comparisons of Ground Truth and Estimated Positions"
     )
 
+    estimate_timestamps = timestamps
+    if len(estimate_timestamps) != len(estimates):
+        estimate_timestamps = timestamps[1:]
+
     axs[0].set_xlabel("Time")
     axs[0].set_ylabel("Yaw")
     axs[0].set_title("Yaw")
     axs[0].set_ylim(-pi / 2, pi / 2)
     axs[0].plot(timestamps, yaw_gt, label="Ground Truth")
-    axs[0].plot(timestamps[1:], yaw_estimated, label="Estimated")
+    axs[0].plot(estimate_timestamps, yaw_estimated, label="Estimated")
 
     axs[1].set_xlabel("Time")
     axs[1].set_ylabel("Pitch")
     axs[1].set_title("Pitch")
     axs[1].set_ylim(-pi / 2, pi / 2)
     axs[1].plot(timestamps, pitch_gt, label="Ground Truth")
-    axs[1].plot(timestamps[1:], pitch_estimated, label="Estimated")
+    axs[1].plot(estimate_timestamps, pitch_estimated, label="Estimated")
 
     axs[2].set_xlabel("Time")
     axs[2].set_ylabel("Roll")
     axs[2].set_title("Roll")
     axs[2].set_ylim(-pi / 2, pi / 2)
     axs[2].plot(timestamps, roll_gt, label="Ground Truth")
-    axs[2].plot(timestamps[1:], roll_estimated, label="Estimated")
+    axs[2].plot(estimate_timestamps, roll_estimated, label="Estimated")
 
     positions_figure, axs = plt.subplots(1, 3, figsize=(20, 10))
     positions_figure.suptitle(
