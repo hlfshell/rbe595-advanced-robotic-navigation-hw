@@ -25,12 +25,12 @@ def rmse(y_true, y_pred):
 
 
 # Open a csv file to append to
-with open("noise_test.csv", "a") as f:
+with open("noise_test_solo.csv", "a") as f:
     writer = csv.writer(f)
 
     files = [
-        # "./hw4/data/studentdata0.mat",
-        # "./hw4/data/studentdata1.mat",
+        "./hw4/data/studentdata0.mat",
+        "./hw4/data/studentdata1.mat",
         # "./hw4/data/studentdata2.mat",
         # "./hw4/data/studentdata3.mat",
         "./hw4/data/studentdata4.mat",
@@ -45,8 +45,8 @@ with open("noise_test.csv", "a") as f:
         # Read data
         base_data, gt = read_mat(file)
 
-        for noise in [15.0, 20.0, 25.0, 30.0, 35.0, 40.0, 45.0, 50.0, 55.0, 60.0]:
-            for noise_gyro in [0.1, 0.5, 0.75, 1.0, 1.5]:
+        for noise in [100.0, 105.0, 110.0, 115.0]:
+            for noise_gyro in [0.01, 0.1, 0.25, 0.5]:
                 # # Let's skip all instances of the noise_gyro being greater
                 # # than the noise
                 # if noise_gyro > noise:
@@ -70,7 +70,7 @@ with open("noise_test.csv", "a") as f:
                 interpolated_gts = interpolate_from_data(gt, data, True)
 
                 particle_filter = ParticleFilter(
-                    noise_scale=noise, noise_scale_gyro=noise_gyro
+                    particle_count=2_000, noise_scale=noise, noise_scale_gyro=noise_gyro
                 )
 
                 start = time()
