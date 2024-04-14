@@ -48,7 +48,8 @@ if __name__ == "__main__":
             data.append(datum)
             orientation, position = Map().estimate_pose(datum.tags)
             positions.append(position)
-            orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            # orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            orientations.append(orientation)
             times.append(datum.timestamp)
 
         # Now run it through UKF, and a 2k and 5k particle filter

@@ -297,6 +297,8 @@ def rotation_matrix_to_euler_angles(
     pitch = np.arctan(-r31 / r33)
 
     return yaw, pitch, roll
+    # return yaw, roll, pitch
+    # return roll, pitch, yaw
 
 
 def orientation_to_yaw_pitch_roll(

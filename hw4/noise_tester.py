@@ -10,6 +10,8 @@ from world import (
     interpolate_from_data,
 )
 
+from utils import interpolate_ground_truth, rmse
+
 import os
 
 import csv
@@ -20,19 +22,15 @@ from task1 import ParticleFilter
 from time import time
 
 
-def rmse(y_true, y_pred):
-    return np.sqrt(np.mean((y_true - y_pred) ** 2))
-
-
 # Open a csv file to append to
-with open("noise_test_solo.csv", "a") as f:
+with open("noise_test.csv", "a") as f:
     writer = csv.writer(f)
 
     files = [
-        "./hw4/data/studentdata0.mat",
-        "./hw4/data/studentdata1.mat",
-        # "./hw4/data/studentdata2.mat",
-        # "./hw4/data/studentdata3.mat",
+        # "./hw4/data/studentdata0.mat",
+        # "./hw4/data/studentdata1.mat",
+        "./hw4/data/studentdata2.mat",
+        "./hw4/data/studentdata3.mat",
         "./hw4/data/studentdata4.mat",
         "./hw4/data/studentdata5.mat",
         "./hw4/data/studentdata6.mat",
@@ -45,8 +43,8 @@ with open("noise_test_solo.csv", "a") as f:
         # Read data
         base_data, gt = read_mat(file)
 
-        for noise in [100.0, 105.0, 110.0, 115.0]:
-            for noise_gyro in [0.01, 0.1, 0.25, 0.5]:
+        for noise in [105.0]:  # [100.0, 105.0, 110.0, 115.0]:
+            for noise_gyro in np.arange(0.1, 1.0, 0.05):  # [0.01, 0.1, 0.25, 0.5]:
                 # # Let's skip all instances of the noise_gyro being greater
                 # # than the noise
                 # if noise_gyro > noise:
@@ -56,9 +54,13 @@ with open("noise_test_solo.csv", "a") as f:
                 orientations: List[np.ndarray] = []
                 times: List[float] = []
                 data: List[Data] = []
-
+                interpolated_gts: List[np.ndarray] = []
                 for datum in base_data:
                     if not datum.tags:
+                        continue
+                    try:
+                        interpolated_gts.append(interpolate_ground_truth(gt, datum))
+                    except:
                         continue
                     data.append(datum)
                     orientation, position = Map().estimate_pose(datum.tags)
@@ -67,34 +69,49 @@ with open("noise_test_solo.csv", "a") as f:
                     times.append(datum.timestamp)
 
                 # Create our gts to be the interpolated ones
-                interpolated_gts = interpolate_from_data(gt, data, True)
+                # interpolated_gts = interpolate_from_data(gt, data, True)
 
                 particle_filter = ParticleFilter(
                     particle_count=2_000, noise_scale=noise, noise_scale_gyro=noise_gyro
                 )
 
                 start = time()
-                estimates, particles = particle_filter.run(data)
+                estimates, particles = particle_filter.run(
+                    data, estimate_method="highest"
+                )
                 print()
                 print(f"Time taken for {noise:.2f}: {time() - start:.2f} seconds")
 
                 # Calculate per step error
                 errors = []
+                position_errors = []
+                orientation_errors = []
                 for i in range(len(estimates)):
                     estimate = estimates[i]
-                    estimate_xyz = estimate[0:3]
+                    estimate_state = estimate[0:6]
                     # ground_truth_xyz = np.array([gt[i].x, gt[i].y, gt[i].z])
-                    ground_truth_xyz = np.array(
+                    ground_truth_state = np.array(
                         [
                             interpolated_gts[i][0],
                             interpolated_gts[i][1],
                             interpolated_gts[i][2],
+                            interpolated_gts[i][3],
+                            interpolated_gts[i][4],
+                            interpolated_gts[i][5],
                         ]
                     )
-                    ground_truth_xyz = ground_truth_xyz.reshape((3, 1))
+                    # ground_truth_state = ground_truth_state.reshape((3, 1))
+                    ground_truth_state = ground_truth_state.reshape((6, 1))
 
-                    error = rmse(estimate_xyz, ground_truth_xyz)
+                    error = rmse(estimate_state, ground_truth_state)
                     errors.append(error)
+
+                    position_error = rmse(estimate_state[0:3], ground_truth_state[0:3])
+                    orientation_error = rmse(
+                        estimate_state[3:6], ground_truth_state[3:6]
+                    )
+                    position_errors.append(position_error)
+                    orientation_errors.append(orientation_error)
 
                 print(
                     [
@@ -105,6 +122,14 @@ with open("noise_test_solo.csv", "a") as f:
                         np.std(errors),
                         np.max(errors),
                         np.min(errors),
+                        np.mean(position_errors),
+                        np.std(position_errors),
+                        np.max(position_errors),
+                        np.min(position_errors),
+                        np.mean(orientation_errors),
+                        np.std(orientation_errors),
+                        np.max(orientation_errors),
+                        np.min(orientation_errors),
                     ]
                 )
                 writer.writerow(
@@ -116,6 +141,14 @@ with open("noise_test_solo.csv", "a") as f:
                         np.std(errors),
                         np.max(errors),
                         np.min(errors),
+                        np.mean(position_errors),
+                        np.std(position_errors),
+                        np.max(position_errors),
+                        np.min(position_errors),
+                        np.mean(orientation_errors),
+                        np.std(orientation_errors),
+                        np.max(orientation_errors),
+                        np.min(orientation_errors),
                     ]
                 )
 

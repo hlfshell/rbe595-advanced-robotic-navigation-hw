@@ -34,7 +34,8 @@ def method_tests(datasets: List[str]):
             data.append(datum)
             orientation, position = Map().estimate_pose(datum.tags)
             positions.append(position)
-            orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            # orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            orientations.append(orientation)
             times.append(datum.timestamp)
 
         particle_filter = ParticleFilter(particle_count=2_000)
@@ -93,7 +94,8 @@ def particle_count_tests(datasets: List[str]):
             data.append(datum)
             orientation, position = Map().estimate_pose(datum.tags)
             positions.append(position)
-            orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            # orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            orientations.append(orientation)
             times.append(datum.timestamp)
 
         for particle_count in [250, 500, 750, 1_000, 2_000, 3_000, 4_000, 5_000]:
