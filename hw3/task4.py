@@ -405,9 +405,10 @@ class UKF:
         orientation, position = self.map.estimate_pose(data.tags)
 
         vector[0:3] = np.array(position).reshape((3, 1))
-        vector[3:6] = np.array(orientation_to_yaw_pitch_roll(orientation)).reshape(
-            (3, 1)
-        )
+        # vector[3:6] = np.array(orientation_to_yaw_pitch_roll(orientation)).reshape(
+        #     (3, 1)
+        # )
+        vector[3:6] = np.array(orientation).reshape((3, 1))
 
         return vector
 
@@ -521,7 +522,8 @@ if __name__ == "__main__":
             orientation, position = map.estimate_pose(datum.tags)
             camera_estimations.append(np.concatenate([position, orientation]))
             positions.append(position)
-            orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            # orientations.append(orientation_to_yaw_pitch_roll(orientation))
+            orientations.append(orientation)
             times.append(datum.timestamp)
 
             # Calculate the rmse for each point now so we can build a

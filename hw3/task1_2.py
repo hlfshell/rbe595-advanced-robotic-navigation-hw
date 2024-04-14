@@ -46,7 +46,8 @@ for dataset in datasets:
             continue
         orientation, position = map.estimate_pose(datum.tags)
         positions.append(position)
-        orientations.append(orientation_to_yaw_pitch_roll(orientation))
+        # orientations.append(orientation_to_yaw_pitch_roll(orientation))
+        orientations.append(orientation)
         times.append(datum.timestamp)
 
     # Create multiplot and isometric plot
