@@ -87,7 +87,7 @@ if __name__ == "__main__":
         interpolated_gts.pop(0)
 
         particle_filter = ParticleFilter(
-            particle_count=250, noise_scale=60, noise_scale_gyro=0.5
+            particle_count=2_000, noise_scale=105, noise_scale_gyro=0.01
         )
         start = time()
         estimates, _ = particle_filter.run(data)
