@@ -1,15 +1,12 @@
 from __future__ import annotations
+
+from abc import ABC, abstractmethod
 from typing import List, Optional, Tuple
 
 import numpy as np
-from scipy.linalg import sqrtm
-
-from abc import ABC, abstractmethod
-
 from data import Data
-
-from earth import RATE, A, E2, F, gravity, gravity_n, curvature_matrix, principal_radii
-
+from earth import E2, RATE, A, F, curvature_matrix, gravity, gravity_n, principal_radii
+from scipy.linalg import sqrtm
 from scipy.spatial.transform import Rotation
 
 
@@ -21,15 +18,17 @@ class UKF(ABC):
         kappa: float = 1,
         alpha: float = 1,
         beta: float = 2.0,
-        model_type : str = "FF",
+        model_type: str = "FF",
     ) -> UKF:
         # if measurement_covariance_matrix is None:
         #     self.measurement_covariance_matrix = calculated_covariance_matrix
         # else:
         self.measurement_covariance_matrix = measurement_covariance_matrix
 
+        self.model_type = model_type
+
         # n is the number of dimensions for our given state
-        state_dimensions = 12 if model_type == "FF" else 15
+        state_dimensions = 12 if self.model_type == "FF" else 15
         self.n = state_dimensions
 
         self.last_state: np.ndarray = np.zeros((self.n, 1))
@@ -123,7 +122,7 @@ class UKF(ABC):
         return sigma_points
 
     def propagation_model(
-        self, state: np.ndarray, delta_t: float, fb: np.ndarray, wb=np.ndarray, model_type: str
+        self, state: np.ndarray, delta_t: float, fb: np.ndarray, wb=np.ndarray
     ) -> np.ndarray:
         """
         Given a state, delta_t, and existing accelerations, return
@@ -140,13 +139,15 @@ class UKF(ABC):
         Ve = state[7]
         Vd = state[8]
 
-        v_n = np.array([Vn, Ve, Vd]).reshape(3,1)
+        v_n = np.array([Vn, Ve, Vd]).reshape(3, 1)
 
-        if model_type == "FB":
+        if self.model_type == "FB":
             fb -= state[9:12]
             wb -= state[12:15]
 
-        R_nb_prev = Rotation.from_euler('xyz', [phi, theta, psi], degrees=True).as_matrix()
+        R_nb_prev = Rotation.from_euler(
+            "xyz", [phi, theta, psi], degrees=True
+        ).as_matrix()
 
         #######################
         # Attitude Update
@@ -183,9 +184,7 @@ class UKF(ABC):
 
         f_nt = 1 / 2 * (R_nb_prev + R_nb) * fb
         v_nt = v_n + delta_t * (
-            f_nt
-            + gravity_n(L, h)
-            - (v_n * (self.screw_omega_ne + 2 * self.screw_omega_ei))
+            f_nt + gravity_n(L, h) - (v_n * (screw_omega_ne + 2 * screw_omega_ei))
         )
 
         #######################
@@ -202,7 +201,9 @@ class UKF(ABC):
         lambda_new += (delta_t / 2) * (Ve / Re_LhcosL)
         lambda_new += (delta_t / 2) * (Ve / Re_LhcosLnew)
 
-        phi, theta, psi = Rotation.as_euler(Rotation.from_matrix(Rn_Lhnew), 'xyz', degrees=True)
+        phi, theta, psi = Rotation.as_euler(
+            Rotation.from_matrix(Rn_Lhnew), "xyz", degrees=True
+        )
 
         new_state = np.zeros((self.n, 1))
         new_state[0] = L_new
@@ -211,7 +212,7 @@ class UKF(ABC):
         new_state[3] = phi
         new_state[4] = theta
         new_state[5] = psi
-        new_state[6:9] = v_nt.reshape((3,1))
+        new_state[6:9] = v_nt.reshape((3, 1))
         # We aren't modifying the biases, so keep
         # them as they were passed in
         new_state[9:] = state[9:]
@@ -238,7 +239,7 @@ class UKF(ABC):
             zhat += self.weights_mean[i] * measurement_points[i]
 
         R = np.zeros((self.n, self.n))
-        #TODO - replace with eye(self.n, self.n) * 1e-3 or roughlys similar ? 
+        # TODO - replace with eye(self.n, self.n) * 1e-3 or roughlys similar ?
         R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
         # 0-3
         # 6-9
@@ -302,7 +303,7 @@ class UKF(ABC):
         return self.fix_covariance(covariance, jitter=10 * jitter)
 
     def predict(
-        self, sigma_points: np.ndarray, ua: np.ndarray, uw: np.ndarray, delta_t: float
+        self, sigma_points: np.ndarray, fb: np.ndarray, wb: np.ndarray, delta_t: float
     ) -> Tuple[np.ndarray]:
         """
         predict takes the current sigma points for the estimate and performs
@@ -313,7 +314,7 @@ class UKF(ABC):
         transitioned_points = np.zeros_like(sigma_points)
         for i in range(sigma_points.shape[0]):
             transitioned_points[i, :] = self.propagation_model(
-                sigma_points[i], delta_t, uw, ua, self.model_type
+                sigma_points[i], delta_t, wb, fb
             )
 
         # Calculate the mean of the transitioned points by their respective
@@ -339,7 +340,7 @@ class UKF(ABC):
         return mu, sigma, transitioned_points
 
     def imu_from_data(self, data: Data) -> np.ndarray:
-        d = np.zeros((6,1))
+        d = np.zeros((6, 1))
         d[0] = data.accel_x
         d[1] = data.accel_y
         d[2] = data.accel_z
@@ -371,12 +372,16 @@ class UKF(ABC):
 
         return state
 
-    def run(self, data: List[Data]) -> List[np.ndarray]:
+    def run(
+        self, data: List[Data]
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
         """
         Given a set of estimated positions, return the estimated positions after running
         the Unscented Kalman Filter over the data
         """
+        ground_truth: List[np.ndarray] = [self.true_pose_from_data(d) for d in data]
         filtered_positions: List[np.ndarray] = []
+        haversine_distances: List[np.ndarray] = []
 
         # First we need to initialize our initial position to the 0th estimated
         # position. We will use the true value for the init on the 0th only
@@ -400,7 +405,7 @@ class UKF(ABC):
 
             # Run the prediction step based off of our state transition
             mubar, sigmabar, transitioned_points = self.predict(
-                sigma_points, ua, uw, delta_t
+                sigma_points, fb, wb, delta_t
             )
 
             # Run the update step to filter our estimated position and resulting
@@ -414,4 +419,4 @@ class UKF(ABC):
 
             filtered_positions.append(state)
 
-        return filtered_positions
+        return filtered_positions, ground_truth, haversine_distances

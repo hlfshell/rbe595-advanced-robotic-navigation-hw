@@ -27,7 +27,7 @@ def read_trajectory(filename: str, headings_included: bool = True) -> List[Data]
     """
     Read the given CSV file and return the Trajectory points provided
     """
-    trajectories = []
+    data = []
     with open(filename) as f:
         for line in f:
             parts = line.split(",")
@@ -35,7 +35,7 @@ def read_trajectory(filename: str, headings_included: bool = True) -> List[Data]
             if headings_included:
                 headings_included = False
                 continue
-            trajectories.append(
+            data.append(
                 Data(
                     time=float(parts[0]),
                     true_lat=float(parts[1]),
@@ -59,4 +59,4 @@ def read_trajectory(filename: str, headings_included: bool = True) -> List[Data]
                 )
             )
 
-    return trajectories
+    return data
