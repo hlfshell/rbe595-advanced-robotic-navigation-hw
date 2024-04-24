@@ -6,23 +6,22 @@ from scipy.linalg import sqrtm
 
 from abc import ABC, abstractmethod
 
-from data import Trajectory
+from data import Data
 
 from earth import RATE, A, E2, F, gravity, gravity_n, curvature_matrix, principal_radii
+
+from scipy.spatial.transform import Rotation
 
 
 class UKF(ABC):
 
-    def __new__(cls) -> UKF:
-        return super().__new__()
-
     def __init__(
         self,
-        state_dimensions: int,
         measurement_covariance_matrix: Optional[np.ndarray] = None,
         kappa: float = 1,
         alpha: float = 1,
         beta: float = 2.0,
+        model_type : str = "FF",
     ) -> UKF:
         # if measurement_covariance_matrix is None:
         #     self.measurement_covariance_matrix = calculated_covariance_matrix
@@ -30,13 +29,14 @@ class UKF(ABC):
         self.measurement_covariance_matrix = measurement_covariance_matrix
 
         # n is the number of dimensions for our given state
+        state_dimensions = 12 if model_type == "FF" else 15
         self.n = state_dimensions
 
         self.last_state: np.ndarray = np.zeros((self.n, 1))
 
         # The number of sigma points we do are typically 2*n + 1,
         # so therefore...
-        self.number_of_sigma_points = 2 * self.n + 1  # 31
+        self.number_of_sigma_points = 2 * self.n + 1  # 25 or 31 based on model
         # kappa is a tuning value for the filter
         self.kappa = kappa
         # alpha is used to calculate initial covariance weights
@@ -87,13 +87,6 @@ class UKF(ABC):
         self.weights_covariance[0] = weights_covariance_0
         self.weights_covariance[1:] = weight_i
 
-        # Variables we have to keep track of over time
-        self.state = np.zeros((self.n, 1))
-        self.R_n_bt = np.eye(3)
-        self.screw_omega_ne = np.zeros((3, 3))
-        self.screw_omega_ei = np.zeros((3, 3))
-
-    @abstractmethod
     def measurement_function(self, state: np.ndarray) -> np.ndarray:
         """
         To be implemented by the subclass. Given a state, return the
@@ -101,7 +94,6 @@ class UKF(ABC):
         """
         pass
 
-    @abstractmethod
     def gyro_acceleration(self):
         """
         ???
@@ -125,13 +117,13 @@ class UKF(ABC):
         # since we already set it to mu
         # This is an implementation of the Julier Sigma Point Method
         for i in range(self.n):
-            sigma_points[i + 1] = mu + S[i].reshape((15, 1))
-            sigma_points[self.n + i + 1] = mu - S[i].reshape((15, 1))
+            sigma_points[i + 1] = mu + S[i].reshape((self.n, 1))
+            sigma_points[self.n + i + 1] = mu - S[i].reshape((self.n, 1))
 
         return sigma_points
 
-    def process_model(
-        self, state: np.ndarray, delta_t: float, ua: np.ndarray, uw=np.ndarray
+    def propagation_model(
+        self, state: np.ndarray, delta_t: float, fb: np.ndarray, wb=np.ndarray, model_type: str
     ) -> np.ndarray:
         """
         Given a state, delta_t, and existing accelerations, return
@@ -147,23 +139,14 @@ class UKF(ABC):
         Vn = state[6]
         Ve = state[7]
         Vd = state[8]
-        e_l = state[9]
-        e_lambda = state[10]
-        e_h = state[11]
 
-        # Pull these from the prior state
-        L_1 = self.state[0]
-        lambda_1 = self.state[1]
-        h_1 = self.state[2]
-        phi_1 = self.state[3]
-        theta_1 = self.state[4]
-        psi_1 = self.state[5]
-        Vn_1 = self.state[6]
-        Ve_1 = self.state[7]
-        Vd_1 = self.state[8]
-        e_l_1 = self.state[9]
-        e_lambda_1 = self.state[10]
-        e_h_1 = self.state[11]
+        v_n = np.array([Vn, Ve, Vd]).reshape(3,1)
+
+        if model_type == "FB":
+            fb -= state[9:12]
+            wb -= state[12:15]
+
+        R_nb_prev = Rotation.from_euler('xyz', [phi, theta, psi], degrees=True).as_matrix()
 
         #######################
         # Attitude Update
@@ -171,13 +154,12 @@ class UKF(ABC):
         omega_e = RATE
         screw_omega_ei = np.array([[0, -omega_e, 0], [omega_e, 0, 0], [0, 0, 0]])
 
-        R0 = A
-        Re_L = R0 / np.sqrt(1 - (E2 * np.sin(L) ** 2))
+        Rn_Lh, Re_Lh, Re_LhcosL = principal_radii(L, h)
 
         omega_ne = np.zeros((3, 1))
-        omega_ne[0] = Ve / (Re_L + h)
-        omega_ne[1] = -Vn / (Re_L + h)
-        omega_ne[2] = -(Ve * np.tan(L)) / (Re_L + h)
+        omega_ne[0] = Ve / Re_Lh
+        omega_ne[1] = -Vn / Rn_Lh
+        omega_ne[2] = -(Ve * np.tan(np.deg2rad(L))) / Re_Lh
 
         screw_omega_ne = np.array(
             [
@@ -188,42 +170,53 @@ class UKF(ABC):
         )
 
         screw_omega_bi = np.array(
-            [[0, -uw[2], uw[1]], [uw[2], 0, -uw[0]], [-uw[1], uw[0], 0]]
+            [[0, -wb[2], wb[1]], [wb[2], 0, -wb[0]], [-wb[1], wb[0], 0]]
         )
 
-        R_n_bt = self.R_n_bt * (np.eye(3) + screw_omega_bi * delta_t) - (
-            (screw_omega_ei + screw_omega_ne) * delta_t * self.R_n_bt
+        R_nb = R_nb_prev * (np.eye(3) + screw_omega_bi * delta_t) - (
+            (screw_omega_ei + screw_omega_ne) * delta_t * R_nb_prev
         )
 
         #######################
         # Velocity Update
         #######################
 
-        f_nt = 1 / 2 * (self.R_n_bt + R_n_bt) * ua
-        v_nt = self.v_nt + delta_t * (
+        f_nt = 1 / 2 * (R_nb_prev + R_nb) * fb
+        v_nt = v_n + delta_t * (
             f_nt
-            + gravity(L_1, h_1)
-            - (Vn_1 * (self.screw_omega_ne + 2 * self.screw_omega_ei))
+            + gravity_n(L, h)
+            - (v_n * (self.screw_omega_ne + 2 * self.screw_omega_ei))
         )
 
         #######################
         # Position Update
         #######################
-        Rn_1, Re_1, _ = principal_radii(L_1, h_1)
-        Rn, Re = principal_radii(L, h)
+        h_new = h - (delta_t / 2) * (Vd + v_nt[2])
+        Rn_Lhnew, _, _ = principal_radii(L, h_new)
+        L_new = L
+        L_new += (delta_t / 2) * (Vn / Rn_Lh + v_nt[0] / Rn_Lh)
+        L_new += (delta_t / 2) * (Vn / Rn_Lh + v_nt[0] / Rn_Lhnew)
 
-        h_new = self.h_1 + (delta_t / 2) * (Vd + Vd_1)
-        L_new = self.L_1
-        L_new += (delta_t / 2) * Vn_1 / (Rn_1 + h_1)
-        L_new += (delta_t / 2) * Vn / (Rn_1 + h)
+        _, _, Re_LhcosLnew = principal_radii(L_new, h_new)
+        lambda_new = lambda_
+        lambda_new += (delta_t / 2) * (Ve / Re_LhcosL)
+        lambda_new += (delta_t / 2) * (Ve / Re_LhcosLnew)
 
-        # Do I
+        phi, theta, psi = Rotation.as_euler(Rotation.from_matrix(Rn_Lhnew), 'xyz', degrees=True)
 
-        # Assign stuff to memory for next pass through
-        self.R_n_bt = R_n_bt
-        self.screw_omega_ne = screw_omega_ne
-        self.screw_omega_ei = screw_omega_ei
-        self.state = state
+        new_state = np.zeros((self.n, 1))
+        new_state[0] = L_new
+        new_state[1] = lambda_new
+        new_state[2] = h_new
+        new_state[3] = phi
+        new_state[4] = theta
+        new_state[5] = psi
+        new_state[6:9] = v_nt.reshape((3,1))
+        # We aren't modifying the biases, so keep
+        # them as they were passed in
+        new_state[9:] = state[9:]
+
+        return new_state
 
     def update(
         self, state: np.ndarray, mu: np.ndarray, sigma: np.ndarray, sigma_points
@@ -245,7 +238,10 @@ class UKF(ABC):
             zhat += self.weights_mean[i] * measurement_points[i]
 
         R = np.zeros((self.n, self.n))
+        #TODO - replace with eye(self.n, self.n) * 1e-3 or roughlys similar ? 
         R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
+        # 0-3
+        # 6-9
         St = np.zeros((self.n, self.n))
         differences_z = measurement_points - zhat
         for i in range(0, self.number_of_sigma_points):
@@ -316,8 +312,8 @@ class UKF(ABC):
         # For each sigma point, run them through our state transition function
         transitioned_points = np.zeros_like(sigma_points)
         for i in range(sigma_points.shape[0]):
-            transitioned_points[i, :] = self.process_model(
-                sigma_points[i], delta_t, uw, ua
+            transitioned_points[i, :] = self.propagation_model(
+                sigma_points[i], delta_t, uw, ua, self.model_type
             )
 
         # Calculate the mean of the transitioned points by their respective
@@ -331,7 +327,7 @@ class UKF(ABC):
         # respective weights. As before, the weights contain a 1/N term so
         # we are effectively finding the average. We expect a NxN output
         # for our sigma matrix
-        Q = np.random.normal(scale=5e-1, size=(15, 15))
+        Q = np.random.normal(scale=5e-1, size=(self.n, self.n))
         differences = transitioned_points - mu
         sigma = np.zeros((self.n, self.n))
         for i in range(0, self.n):
@@ -342,7 +338,40 @@ class UKF(ABC):
 
         return mu, sigma, transitioned_points
 
-    def run(self, estimated_positions: List[Trajectory]) -> List[np.ndarray]:
+    def imu_from_data(self, data: Data) -> np.ndarray:
+        d = np.zeros((6,1))
+        d[0] = data.accel_x
+        d[1] = data.accel_y
+        d[2] = data.accel_z
+        d[3] = data.gyro_x
+        d[4] = data.gyro_y
+        d[5] = data.gyro_z
+
+        return d
+
+    def gnss_from_data(self, data: Data) -> np.ndarray:
+        z = np.zeros((self.n, 1))
+        z[0] = data.z_lat
+        z[1] = data.z_lon
+        z[2] = data.z_alt
+        z[3] = data.z_VN
+        z[4] = data.z_VE
+        z[5] = data.z_VD
+
+        return z
+
+    def true_pose_from_data(self, data: Data) -> np.ndarray:
+        state = np.zeros((self.n, 1))
+        state[0] = data.true_lat
+        state[1] = data.true_lon
+        state[2] = data.true_alt
+        state[3] = data.true_roll
+        state[4] = data.true_pitch
+        state[5] = data.true_heading
+
+        return state
+
+    def run(self, data: List[Data]) -> List[np.ndarray]:
         """
         Given a set of estimated positions, return the estimated positions after running
         the Unscented Kalman Filter over the data
@@ -350,34 +379,23 @@ class UKF(ABC):
         filtered_positions: List[np.ndarray] = []
 
         # First we need to initialize our initial position to the 0th estimated
-        # position
-        state = self.__data_to_vector(
-            estimated_positions[0], np.zeros((self.n, 1)), 0.0
-        )
-        # Note that any velocities should be 0 for the first step
-        state[6:9] = np.zeros((3, 1))
-        previous_state_timestamp = estimated_positions[0].timestamp
+        # position. We will use the true value for the init on the 0th only
+        state = self.true_pose_from_data(data[0])
+        previous_state_timestamp = data[0].time
 
-        process_covariance_matrix = np.eye(15) * 1e-3
+        process_covariance_matrix = np.eye(self.n) * 1e-3
 
-        for index, data in enumerate(estimated_positions):
+        for index, read in enumerate(data):
             # Skip the 0th estimated position
             if index == 0:
                 continue
 
-            # Grab the current state vector for our given estimated position
-            state = self.__data_to_vector(data, state, previous_state_timestamp)
-
-            # What is the current accelerometer and gyroscope readings?
-            ua = data.acc
-            uw = data.omg
-
             # Delta t since our last prediction
-            delta_t = data.timestamp - previous_state_timestamp
-            previous_state_timestamp = data.timestamp
+            delta_t = read.time - previous_state_timestamp
+            previous_state_timestamp = read.time
 
-            # Get our sigma points. We expect (self.n * 2) + 1 = 31 sigma points
-            # for a (15,31) matrix
+            # Get our sigma points. We expect (self.n * 2) + 1 for S sigma points
+            # for a (self.n, S) matrix
             sigma_points = self.find_sigma_points(state, process_covariance_matrix)
 
             # Run the prediction step based off of our state transition

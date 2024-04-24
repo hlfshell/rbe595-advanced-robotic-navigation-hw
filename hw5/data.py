@@ -1,7 +1,7 @@
 from typing import List, NamedTuple
 
 
-class Trajectory(NamedTuple):
+class Data(NamedTuple):
     time: float
     true_lat: float
     true_lon: float
@@ -23,7 +23,7 @@ class Trajectory(NamedTuple):
     z_VD: float
 
 
-def read_trajectory(filename: str, headings_included: bool = True) -> List[Trajectory]:
+def read_trajectory(filename: str, headings_included: bool = True) -> List[Data]:
     """
     Read the given CSV file and return the Trajectory points provided
     """
@@ -36,7 +36,7 @@ def read_trajectory(filename: str, headings_included: bool = True) -> List[Traje
                 headings_included = False
                 continue
             trajectories.append(
-                Trajectory(
+                Data(
                     time=float(parts[0]),
                     true_lat=float(parts[1]),
                     true_lon=float(parts[2]),
