@@ -9,6 +9,8 @@ from earth import E2, RATE, A, F, curvature_matrix, gravity, gravity_n, principa
 from scipy.linalg import sqrtm
 from scipy.spatial.transform import Rotation
 
+from haversine import haversine, Unit
+
 
 class UKF(ABC):
 
@@ -20,18 +22,16 @@ class UKF(ABC):
         beta: float = 2.0,
         model_type: str = "FF",
     ) -> UKF:
-        # if measurement_covariance_matrix is None:
-        #     self.measurement_covariance_matrix = calculated_covariance_matrix
-        # else:
-        self.measurement_covariance_matrix = measurement_covariance_matrix
-
         self.model_type = model_type
 
         # n is the number of dimensions for our given state
         state_dimensions = 12 if self.model_type == "FF" else 15
         self.n = state_dimensions
 
-        self.last_state: np.ndarray = np.zeros((self.n, 1))
+        if measurement_covariance_matrix is None:
+            self.measurement_covariance_matrix = np.eye((self.n, self.n)) * 1e-3
+        else:
+            self.measurement_covariance_matrix = measurement_covariance_matrix
 
         # The number of sigma points we do are typically 2*n + 1,
         # so therefore...
@@ -146,7 +146,7 @@ class UKF(ABC):
             wb -= state[12:15]
 
         R_nb_prev = Rotation.from_euler(
-            "xyz", [phi, theta, psi], degrees=True
+            "xyz", np.array([phi, theta, psi]).reshape((3,)), degrees=True
         ).as_matrix()
 
         #######################
@@ -157,7 +157,7 @@ class UKF(ABC):
 
         Rn_Lh, Re_Lh, Re_LhcosL = principal_radii(L, h)
 
-        omega_ne = np.zeros((3, 1))
+        omega_ne = np.zeros((3,))
         omega_ne[0] = Ve / Re_Lh
         omega_ne[1] = -Vn / Rn_Lh
         omega_ne[2] = -(Ve * np.tan(np.deg2rad(L))) / Re_Lh
@@ -170,9 +170,13 @@ class UKF(ABC):
             ]
         )
 
+        omega_ne = omega_ne.reshape((3, 1))
+
+        wb = wb.reshape((3,))
         screw_omega_bi = np.array(
             [[0, -wb[2], wb[1]], [wb[2], 0, -wb[0]], [-wb[1], wb[0], 0]]
         )
+        wb = wb.reshape((3, 1))
 
         R_nb = R_nb_prev * (np.eye(3) + screw_omega_bi * delta_t) - (
             (screw_omega_ei + screw_omega_ne) * delta_t * R_nb_prev
@@ -182,9 +186,12 @@ class UKF(ABC):
         # Velocity Update
         #######################
 
-        f_nt = 1 / 2 * (R_nb_prev + R_nb) * fb
+        f_nt = 1 / 2 * np.dot(R_nb_prev + R_nb, fb)
+
         v_nt = v_n + delta_t * (
-            f_nt + gravity_n(L, h) - (v_n * (screw_omega_ne + 2 * screw_omega_ei))
+            f_nt
+            + gravity_n(L, h).reshape((3, 1))
+            - np.dot(screw_omega_ne + 2 * screw_omega_ei, v_n)
         )
 
         #######################
@@ -197,12 +204,15 @@ class UKF(ABC):
         L_new += (delta_t / 2) * (Vn / Rn_Lh + v_nt[0] / Rn_Lhnew)
 
         _, _, Re_LhcosLnew = principal_radii(L_new, h_new)
+
         lambda_new = lambda_
         lambda_new += (delta_t / 2) * (Ve / Re_LhcosL)
         lambda_new += (delta_t / 2) * (Ve / Re_LhcosLnew)
 
         phi, theta, psi = Rotation.as_euler(
-            Rotation.from_matrix(Rn_Lhnew), "xyz", degrees=True
+            Rotation.from_matrix(R_nb),
+            "xyz",
+            degrees=True,
         )
 
         new_state = np.zeros((self.n, 1))
@@ -374,10 +384,15 @@ class UKF(ABC):
 
     def run(
         self, data: List[Data]
-    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[np.ndarray]]:
+    ) -> Tuple[List[np.ndarray], List[np.ndarray], List[float]]:
         """
         Given a set of estimated positions, return the estimated positions after running
-        the Unscented Kalman Filter over the data
+        the Unscented Kalman Filter over the data.
+
+        Returns:
+        1. The filter's estimated states (n - 1 states)
+        2. The ground truth positions (n states)
+        3. The haversine distances between the estimated and ground truth positions (n-1 distances)
         """
         ground_truth: List[np.ndarray] = [self.true_pose_from_data(d) for d in data]
         filtered_positions: List[np.ndarray] = []
@@ -398,6 +413,9 @@ class UKF(ABC):
             # Delta t since our last prediction
             delta_t = read.time - previous_state_timestamp
             previous_state_timestamp = read.time
+            imu = self.imu_from_data(read)
+            fb = imu[0:3]
+            wb = imu[3:6]
 
             # Get our sigma points. We expect (self.n * 2) + 1 for S sigma points
             # for a (self.n, S) matrix
@@ -418,5 +436,12 @@ class UKF(ABC):
             state = mu
 
             filtered_positions.append(state)
+            haversine_distances.append(
+                haversine(
+                    (state[0], state[1]),
+                    (ground_truth[index][0], ground_truth[index][1]),
+                    units=Unit.NAUTICAL_MILES,
+                )
+            )
 
         return filtered_positions, ground_truth, haversine_distances
