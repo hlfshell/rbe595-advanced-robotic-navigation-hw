@@ -17,9 +17,9 @@ class UKF(ABC):
     def __init__(
         self,
         measurement_covariance_matrix: Optional[np.ndarray] = None,
-        kappa: float = 1,
-        alpha: float = 1,
-        beta: float = 2.0,
+        kappa: float = 1.0,
+        alpha: float = 1.0,
+        beta: float = 0.4,
         model_type: str = "FF",
     ) -> UKF:
         self.model_type = model_type
@@ -28,10 +28,10 @@ class UKF(ABC):
         state_dimensions = 12 if self.model_type == "FF" else 15
         self.n = state_dimensions
 
-        if measurement_covariance_matrix is None:
-            self.measurement_covariance_matrix = np.eye((self.n, self.n)) * 1e-3
-        else:
-            self.measurement_covariance_matrix = measurement_covariance_matrix
+        # if measurement_covariance_matrix is None:
+        #     self.measurement_covariance_matrix = np.eye(self.n) * 1e-3
+        # else:
+        #     self.measurement_covariance_matrix = measurement_covariance_matrix
 
         # The number of sigma points we do are typically 2*n + 1,
         # so therefore...
@@ -86,12 +86,38 @@ class UKF(ABC):
         self.weights_covariance[0] = weights_covariance_0
         self.weights_covariance[1:] = weight_i
 
-    def measurement_function(self, state: np.ndarray) -> np.ndarray:
+    def measurement_function(self, state: np.ndarray, gnss: np.ndarray) -> np.ndarray:
         """
-        To be implemented by the subclass. Given a state, return the
-        state affected by the measurement function
+        measurement_function takes the current state and returns the measurement
+        of the state adjusted by our measurement covariance matrix noise
+
+        Note that here state is (6,1), not (15,1), as we are essentially measuring
+        6 measurements for the state - the solvePnP positions and orientations.
         """
-        pass
+        noise_adjustment = np.zeros((self.n, 1))
+        if self.model_type == "FF":
+            noise_scale = 5e-3
+        else:
+            noise_scale = 2e-3
+        noise = np.random.normal(scale=noise_scale, size=(self.n, self.n))
+        c = np.zeros((self.n, self.n))
+        c[0:6, 0:6] = np.eye(6)
+        if self.model_type == "FB":
+            c[6:9, 6:9] = np.eye(3)
+
+        R = np.diag(noise).reshape(self.n, 1)
+        noise_adjustment[0 : self.n] = np.dot(c, state) + R
+
+        # Calculate error difference to measurement
+        if self.model_type == "FF":
+            haversine_distance = haversine(
+                state[0:2], gnss[0:2], unit=Unit.DEGREES
+            )
+            noise_adjustment[9] = haversine_distance
+            noise_adjustment[10] = haversine_distance 
+            noise_adjustment[11] = state[2] - gnss[2]
+
+        return noise_adjustment
 
     def gyro_acceleration(self):
         """
@@ -108,7 +134,14 @@ class UKF(ABC):
         # of our distribution (our center point)
         sigma_points[0] = mu
 
-        S = sqrtm((self.n + self.kappa) * sigma)
+        try:
+            S = sqrtm((self.n + self.kappa) * sigma)
+        except:
+            print(self.n)
+            print(self.kappa)
+            print(sigma)
+            print(sigma.shape)
+            raise "dead"
 
         # Now for each point that we wish to go through for our sigma points we
         # move back and forth around the central point; thus we add, then
@@ -230,16 +263,20 @@ class UKF(ABC):
         return new_state
 
     def update(
-        self, state: np.ndarray, mu: np.ndarray, sigma: np.ndarray, sigma_points
+        self,
+        gnss: np.ndarray,
+        mu: np.ndarray,
+        sigma: np.ndarray,
+        sigma_points: np.ndarray,
     ) -> np.ndarray:
         """
-        update takes the state, mubar, and sigmabar and performs the
+        update takes the gnss, mubar, and sigmabar and performs the
         update step
         """
         # Apply the measurement function across each new sigma point
         measurement_points = np.zeros_like(sigma_points)
         for i in range(self.number_of_sigma_points):
-            measurement_points[i] = self.measurement_function(sigma_points[i])
+            measurement_points[i] = self.measurement_function(sigma_points[i], gnss)
 
         # Calculate the mean of the measurement points by their respective
         # weights. The weights have a 1/N term so the mean is calculated
@@ -248,18 +285,25 @@ class UKF(ABC):
         for i in range(0, self.number_of_sigma_points):
             zhat += self.weights_mean[i] * measurement_points[i]
 
-        R = np.zeros((self.n, self.n))
-        # TODO - replace with eye(self.n, self.n) * 1e-3 or roughlys similar ?
-        R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
-        # 0-3
-        # 6-9
+        # R = np.zeros((self.n, self.n))
+        # if self.model_type == "FF":
+        #     noise = np.random.normal(scale=5e-3, size=(self.n, self.n))
+        # else:
+        #     noise = np.random.normal(scale=2e-3, size=(self.n, self.n))
+        # R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
+        # R[0:3, 0:3] = np.diag(self.measurement_covariance_matrix[0:3])
+        # R[6:9, 6:9] = np.diag(self.measurement_covariance_matrix[6:9])
+        # R[0:3, 0:3] = np.diag(noise[0:3])
+        # R[6:9, 6:9] = np.diag(noise[6:9])
+        # R = np.diag(self.measurement_covariance_matrix)
+
         St = np.zeros((self.n, self.n))
         differences_z = measurement_points - zhat
         for i in range(0, self.number_of_sigma_points):
             St += self.weights_covariance[i] * np.dot(
                 differences_z[i], differences_z[i].T
             )
-        St += R
+        # St += R
 
         # Find the cross-covariance
         # Find the differences between the generated sigma points from
@@ -274,7 +318,7 @@ class UKF(ABC):
         kalman_gain = np.dot(sigmahat_t, np.linalg.pinv(St))
 
         # Update the mean and covariance
-        current_position = mu + np.dot(kalman_gain, state - zhat)
+        current_position = mu + np.dot(kalman_gain, ??? - zhat)
         covariance = sigma - np.dot(kalman_gain, St).dot(kalman_gain.T)
         covariance = self.fix_covariance(covariance)
 
@@ -338,7 +382,8 @@ class UKF(ABC):
         # respective weights. As before, the weights contain a 1/N term so
         # we are effectively finding the average. We expect a NxN output
         # for our sigma matrix
-        Q = np.random.normal(scale=5e-1, size=(self.n, self.n))
+        # Q = np.random.normal(scale=5e-1, size=(self.n, self.n))
+        Q = np.random.normal(scale=5e-5, size=(self.n, self.n))
         differences = transitioned_points - mu
         sigma = np.zeros((self.n, self.n))
         for i in range(0, self.n):
@@ -414,6 +459,7 @@ class UKF(ABC):
             delta_t = read.time - previous_state_timestamp
             previous_state_timestamp = read.time
             imu = self.imu_from_data(read)
+            gnss = self.gnss_from_data(read)
             fb = imu[0:3]
             wb = imu[3:6]
 
@@ -428,20 +474,23 @@ class UKF(ABC):
 
             # Run the update step to filter our estimated position and resulting
             # sigma (mu and sigma)
-            mu, sigma = self.update(state, mubar, sigmabar, transitioned_points)
+            mu, sigma = self.update(gnss, mubar, sigmabar, transitioned_points)
 
             # Our current position is mu, and our new process covariance
             # matrix is sigma
             process_covariance_matrix = sigma
             state = mu
 
+            if self.model_type == "FF":
+                state[0:3] -= state[9:12]
+
             filtered_positions.append(state)
-            haversine_distances.append(
-                haversine(
-                    (state[0], state[1]),
-                    (ground_truth[index][0], ground_truth[index][1]),
-                    units=Unit.NAUTICAL_MILES,
-                )
-            )
+            # haversine_distances.append(
+            #     haversine(
+            #         (state[0], state[1]),
+            #         (ground_truth[index][0], ground_truth[index][1]),
+            #         unit=Unit.DEGREES,
+            #     )
+            # )
 
         return filtered_positions, ground_truth, haversine_distances
