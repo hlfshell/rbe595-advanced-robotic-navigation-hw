@@ -1,37 +1,30 @@
 from __future__ import annotations
 
-from abc import ABC, abstractmethod
-from typing import List, Optional, Tuple
+from typing import List, Tuple
 
 import numpy as np
 from data import Data
-from earth import E2, RATE, A, F, curvature_matrix, gravity, gravity_n, principal_radii
+from earth import RATE, gravity_n, principal_radii
 from scipy.linalg import sqrtm
 from scipy.spatial.transform import Rotation
 
 from haversine import haversine, Unit
 
 
-class UKF(ABC):
+class UKF:
 
     def __init__(
         self,
-        measurement_covariance_matrix: Optional[np.ndarray] = None,
         kappa: float = 1.0,
         alpha: float = 1.0,
         beta: float = 0.4,
-        model_type: str = "FF",
+        model_type: str = "FB",
     ) -> UKF:
         self.model_type = model_type
 
         # n is the number of dimensions for our given state
         state_dimensions = 12 if self.model_type == "FF" else 15
         self.n = state_dimensions
-
-        # if measurement_covariance_matrix is None:
-        #     self.measurement_covariance_matrix = np.eye(self.n) * 1e-3
-        # else:
-        #     self.measurement_covariance_matrix = measurement_covariance_matrix
 
         # The number of sigma points we do are typically 2*n + 1,
         # so therefore...
@@ -97,6 +90,7 @@ class UKF(ABC):
         noise_adjustment = np.zeros((self.n, 1))
         if self.model_type == "FF":
             noise_scale = 5e-3
+            noise_scale = 1e-2
         else:
             noise_scale = 2e-3
         noise = np.random.normal(scale=noise_scale, size=(self.n, self.n))
@@ -110,24 +104,15 @@ class UKF(ABC):
 
         # Calculate error difference to measurement
         if self.model_type == "FF":
-            haversine_distance = haversine(
-                state[0:2], gnss[0:2], unit=Unit.DEGREES
-            )
+            haversine_distance = haversine(state[0:2], gnss[0:2], unit=Unit.DEGREES)
             noise_adjustment[9] = haversine_distance
-            noise_adjustment[10] = haversine_distance 
+            noise_adjustment[10] = haversine_distance
             noise_adjustment[11] = state[2] - gnss[2]
 
         return noise_adjustment
 
-    def gyro_acceleration(self):
-        """
-        ???
-        """
-        pass
-
     def find_sigma_points(self, mu: np.ndarray, sigma: np.ndarray) -> np.ndarray:
         # Based on our system, we expect this to be a 15x31 matrix
-        # sigma_points = np.zeros((number_of_points, self.number_of_sigma_points))
         sigma_points = np.zeros((self.number_of_sigma_points, self.n, 1))
 
         # Set the first column of sigma points to be mu, since that is the mean
@@ -141,7 +126,7 @@ class UKF(ABC):
             print(self.kappa)
             print(sigma)
             print(sigma.shape)
-            raise "dead"
+            raise "sqrtm failure"
 
         # Now for each point that we wish to go through for our sigma points we
         # move back and forth around the central point; thus we add, then
@@ -285,18 +270,6 @@ class UKF(ABC):
         for i in range(0, self.number_of_sigma_points):
             zhat += self.weights_mean[i] * measurement_points[i]
 
-        # R = np.zeros((self.n, self.n))
-        # if self.model_type == "FF":
-        #     noise = np.random.normal(scale=5e-3, size=(self.n, self.n))
-        # else:
-        #     noise = np.random.normal(scale=2e-3, size=(self.n, self.n))
-        # R[0:6, 0:6] = np.diag(self.measurement_covariance_matrix)
-        # R[0:3, 0:3] = np.diag(self.measurement_covariance_matrix[0:3])
-        # R[6:9, 6:9] = np.diag(self.measurement_covariance_matrix[6:9])
-        # R[0:3, 0:3] = np.diag(noise[0:3])
-        # R[6:9, 6:9] = np.diag(noise[6:9])
-        # R = np.diag(self.measurement_covariance_matrix)
-
         St = np.zeros((self.n, self.n))
         differences_z = measurement_points - zhat
         for i in range(0, self.number_of_sigma_points):
@@ -318,7 +291,7 @@ class UKF(ABC):
         kalman_gain = np.dot(sigmahat_t, np.linalg.pinv(St))
 
         # Update the mean and covariance
-        current_position = mu + np.dot(kalman_gain, ??? - zhat)
+        current_position = mu + np.dot(kalman_gain, gnss - zhat)
         covariance = sigma - np.dot(kalman_gain, St).dot(kalman_gain.T)
         covariance = self.fix_covariance(covariance)
 
@@ -382,8 +355,11 @@ class UKF(ABC):
         # respective weights. As before, the weights contain a 1/N term so
         # we are effectively finding the average. We expect a NxN output
         # for our sigma matrix
-        # Q = np.random.normal(scale=5e-1, size=(self.n, self.n))
-        Q = np.random.normal(scale=5e-5, size=(self.n, self.n))
+        if self.model_type == "FF":
+            noise_scale = 1e-1
+        else:
+            noise_scale = 5e-5
+        Q = np.random.normal(scale=noise_scale, size=(self.n, self.n))
         differences = transitioned_points - mu
         sigma = np.zeros((self.n, self.n))
         for i in range(0, self.n):
@@ -410,9 +386,9 @@ class UKF(ABC):
         z[0] = data.z_lat
         z[1] = data.z_lon
         z[2] = data.z_alt
-        z[3] = data.z_VN
-        z[4] = data.z_VE
-        z[5] = data.z_VD
+        z[6] = data.z_VN
+        z[7] = data.z_VE
+        z[8] = data.z_VD
 
         return z
 
