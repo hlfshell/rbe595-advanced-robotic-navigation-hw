@@ -38,8 +38,8 @@ for params in [("FB", 2e-3, 5e-5), ("FF", 1e-9, 0.18)]:
         rmse_figure.savefig(f"./hw5/imgs/{params[0]}_rmse.png")
 
         (
-            statevar,
             latlon_haversine,
+            statevar,
         ) = create_overlay_plots(gt, estimates, haversines, times)
         latlon_haversine.savefig(f"./hw5/imgs/{params[0]}_latlon_haversines.png")
         statevar.savefig(f"./hw5/imgs/{params[0]}_statevar.png")
