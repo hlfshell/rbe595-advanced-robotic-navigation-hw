@@ -5,10 +5,9 @@ from typing import List, Tuple
 import numpy as np
 from data import Data
 from earth import RATE, gravity_n, principal_radii
+from haversine import Unit, haversine
 from scipy.linalg import sqrtm
 from scipy.spatial.transform import Rotation
-
-from haversine import haversine, Unit
 
 
 class UKF:
@@ -19,12 +18,17 @@ class UKF:
         alpha: float = 1.0,
         beta: float = 0.4,
         model_type: str = "FB",
+        noise_scale_measurement: float = 5e-3,
+        noise_scale_prediction: float = 1e-3,
     ) -> UKF:
         self.model_type = model_type
 
         # n is the number of dimensions for our given state
         state_dimensions = 12 if self.model_type == "FF" else 15
         self.n = state_dimensions
+
+        self.noise_scale_measurement = noise_scale_measurement
+        self.noise_scale_prediction = noise_scale_prediction
 
         # The number of sigma points we do are typically 2*n + 1,
         # so therefore...
@@ -90,10 +94,12 @@ class UKF:
         noise_adjustment = np.zeros((self.n, 1))
         if self.model_type == "FF":
             noise_scale = 5e-3
-            noise_scale = 1e-2
         else:
             noise_scale = 2e-3
-        noise = np.random.normal(scale=noise_scale, size=(self.n, self.n))
+        noise = np.random.normal(
+            scale=self.noise_scale_measurement, size=(self.n, self.n)
+        )
+        # noise = np.random.normal(scale=noise_scale, size=(self.n, self.n))
         c = np.zeros((self.n, self.n))
         c[0:6, 0:6] = np.eye(6)
         if self.model_type == "FB":
@@ -103,11 +109,11 @@ class UKF:
         noise_adjustment[0 : self.n] = np.dot(c, state) + R
 
         # Calculate error difference to measurement
-        if self.model_type == "FF":
-            haversine_distance = haversine(state[0:2], gnss[0:2], unit=Unit.DEGREES)
-            noise_adjustment[9] = haversine_distance
-            noise_adjustment[10] = haversine_distance
-            noise_adjustment[11] = state[2] - gnss[2]
+        # if self.model_type == "FF":
+        #     haversine_distance = haversine(state[0:2], gnss[0:2], unit=Unit.DEGREES)
+        #     noise_adjustment[9] = haversine_distance
+        #     noise_adjustment[10] = haversine_distance
+        #     noise_adjustment[11] = state[2] - gnss[2]
 
         return noise_adjustment
 
@@ -356,10 +362,11 @@ class UKF:
         # we are effectively finding the average. We expect a NxN output
         # for our sigma matrix
         if self.model_type == "FF":
-            noise_scale = 1e-1
+            noise_scale = 1e-3
         else:
             noise_scale = 5e-5
-        Q = np.random.normal(scale=noise_scale, size=(self.n, self.n))
+        Q = np.random.normal(scale=self.noise_scale_prediction, size=(self.n, self.n))
+        # Q = np.random.normal(scale=noise_scale, size=(self.n, self.n))
         differences = transitioned_points - mu
         sigma = np.zeros((self.n, self.n))
         for i in range(0, self.n):
@@ -425,12 +432,14 @@ class UKF:
         previous_state_timestamp = data[0].time
 
         process_covariance_matrix = np.eye(self.n) * 1e-3
+        self.steps = 0
 
         for index, read in enumerate(data):
             # Skip the 0th estimated position
             if index == 0:
                 continue
 
+            self.steps += 1
             # Delta t since our last prediction
             delta_t = read.time - previous_state_timestamp
             previous_state_timestamp = read.time
@@ -448,6 +457,10 @@ class UKF:
                 sigma_points, fb, wb, delta_t
             )
 
+            # Handle error calculation if the model is feed forward
+            if self.model_type == "FF":
+                mubar
+
             # Run the update step to filter our estimated position and resulting
             # sigma (mu and sigma)
             mu, sigma = self.update(gnss, mubar, sigmabar, transitioned_points)
@@ -458,15 +471,15 @@ class UKF:
             state = mu
 
             if self.model_type == "FF":
-                state[0:3] -= state[9:12]
+                mubar[9:12] = mubar[0:3] - gnss[0:3]
 
             filtered_positions.append(state)
-            # haversine_distances.append(
-            #     haversine(
-            #         (state[0], state[1]),
-            #         (ground_truth[index][0], ground_truth[index][1]),
-            #         unit=Unit.DEGREES,
-            #     )
-            # )
+            haversine_distances.append(
+                haversine(
+                    (state[0], state[1]),
+                    (ground_truth[index][0], ground_truth[index][1]),
+                    unit=Unit.DEGREES,
+                )
+            )
 
         return filtered_positions, ground_truth, haversine_distances
