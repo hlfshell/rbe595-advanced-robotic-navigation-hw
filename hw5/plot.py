@@ -110,14 +110,7 @@ def create_overlay_plots(
     axs[1, 2].set_ylabel("Yaw (π)")
     axs[1, 2].set_title("Yaw of Estimated and Ground Truth")
     axs[1, 2].plot(times, gt_yaw[1:], label="Ground Truth")
-    # axs[1, 2].plot(times[1:], est_yaw[1:], label="Estimated")
-    line = np.linspace(195.2, 198.4, len(est_yaw[1:]))
-    line += np.random.uniform(low=-0.1, high=0.1, size=len(est_yaw[1:]))
-    axs[1, 2].plot(
-        times[1:],
-        line,
-        label="Estimated",
-    )
+    axs[1, 2].plot(times[1:], est_yaw[1:], label="Estimated")
     axs[1, 2].set_ylim(180, 210)
     axs[1, 2].legend()
 
