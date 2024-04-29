@@ -238,9 +238,65 @@ The following python code implements the above code, wherein
     return new_state
 \end{python}
 
-\section*{Tasks 1 through 3}
+\section*{Task 1}
+
+In this task we're asked to derive the observation model for our UKF for the FB and FF models.
+
+To this end, we calculate our resulting $z$ as:
+
+\begin{equation}
+    z = I_{n\times n} \mu + N(0, R)
+\end{equation}
+
+...wherein $I_{n\times n}$ is the identity matrix at a size of $n$, $n$ being the dimensional size of our state ($12$ for FF, and $15$ for our FB), $\mu$ is our state vector, and $N(0, R)$ is a noise term.
+
+Thus, for our FF model, we have:
+
+\begin{equation}
+    z = I_{12\times 12} \begin{bmatrix}
+        L \\ \lambda \\ h \\ \phi \\ \theta \\ \psi \\ V_N \\ V_E \\ V_D \\ e_L \\ e_\lambda \\ e_h
+    \end{bmatrix} + N(0, R) = \begin{bmatrix}
+        L \\ \lambda \\ h \\ 0 \\ 0 \\ 0 \\ 0 \\ 0 \\ 0 \\ 0 \\ 0 \\ 0
+    \end{bmatrix} + N(0, R)
+\end{equation}
+
+The errors are calculated here by taking the linear difference between the measured GNSS values and the resulting state between the \textit{predict} and \textit{update} steps. Thus we perform:
+
+\begin{equation}
+    \bar{\mu}_{9:12} = \mu_{0:3} - {gnss}_{0:3}
+\end{equation}
+
+...and for our FB model, we have:
+
+\begin{equation}
+    z = I_{15\times 15} \begin{bmatrix}
+        L \\ \lambda \\ h \\ \phi \\ \theta \\ \psi \\ V_N \\ V_E \\ V_D \\ b_{a_x} \\ b_{a_y} \\ b_{a_z} \\ b_{g_x} \\ b_{g_y} \\ b_{g_z}
+    \end{bmatrix} + N(0, R) = \begin{bmatrix}
+        L \\ \lambda \\ h \\ 0 \\ 0 \\ 0 \\ V_N \\ V_E \\ V_D \\ 0 \\ 0 \\ 0 \\ 0 \\ 0 \\ 0
+    \end{bmatrix} + N(0, R)
+\end{equation}
+
+\section*{Tasks 2 through 3}
 
 For tasks 1 through 3, we were charged with implementing the UKF filter, and then the feedback and feed forward (FB/FF, respectively). The implementation for all of this can be found in the attached \textit{ukf.py} file.
+
+We seek to get the performance of the UKF filter to an acceptable level - and, at times, even possible to complete the run through data without crashing due to absurd values causing latitude/longitude to escape its expected $(-90, 90)$ bounds, or creating a $\Sigma$ covariance matrix that is positive non-definite with imaginary values. To achieve this, we needed to narrow down the expected hyperparameters. The largest range of hyperparameters we saw effects across was the scale of the noise added to the Q and R, our measurement and process covariance matricies.
+
+To narrow down the range of noises, the provided \textit{noise\_search.py} performs a hyperparameter search. Over time we increased or lowered the ranges of search to narrow down on the decided noises for each model:
+
+\begin{table}[H]
+    \centering
+    \begin{tabular}{|c|c|c|}
+        \hline
+        Model & Q Noise & R Noise \\
+        \hline
+        FB    & 2e-3    & 5e-5    \\
+        FF    & 1e-9    & 0.18    \\
+        \hline
+    \end{tabular}
+\end{table}
+
+Even with these discovered hyperparameters, we still introduced a jitter fix methodology to our UKF filter. Our \textit{fix\_covariance} method adds increasing amounts of jitter noise to the covariance matrix to knock it back to positive definite.
 
 \section*{Task 4}
 
